@@ -52,4 +52,64 @@ export default {
       return { role, el: content };
     });
   },
+
+  /**
+   * ChatGPT renders its own action toolbar under each message, containing
+   * native buttons like 复制回复 / 喜欢. We inject our own buttons INTO these
+   * toolbars so they match the site's look exactly.
+   *
+   * Located via the stable data-testid="copy-turn-action-button" (the toolbar
+   * is that button's parent), with aria-label / role=group as fallbacks.
+   * Role is decided by whether the toolbar has an "编辑消息" button (user-only).
+   *
+   * Returns one entry per message toolbar: { toolbar, content, role }.
+   */
+  getNativeToolbars() {
+    const out = [];
+    // Primary: find ChatGPT's own copy buttons and take their parent toolbar.
+    let copyBtns = queryAll(['[data-testid="copy-turn-action-button"]']);
+    // Fallback: aria-label-based if the testid ever changes.
+    if (!copyBtns.length) {
+      copyBtns = queryAll([
+        '[aria-label="复制回复"]', '[aria-label="复制消息"]',
+        '[aria-label="Copy response"]', '[aria-label="Copy message"]',
+      ]);
+    }
+
+    const seen = new Set();
+    for (const btn of copyBtns) {
+      const toolbar = btn.parentElement;
+      if (!toolbar || seen.has(toolbar)) continue;
+      seen.add(toolbar);
+
+      // User messages have an edit button in their toolbar; assistant don't.
+      const hasEdit = !!toolbar.querySelector(
+        '[aria-label="编辑消息"], [aria-label="Edit message"], [data-testid="edit-message-action-button"]'
+      );
+      const role = hasEdit ? 'user' : 'assistant';
+
+      // The toolbar lives at a variable depth relative to the message content,
+      // so walk UP until we find the rendered content node.
+      const content = findContentAncestor(toolbar);
+      if (content) out.push({ toolbar, content, role });
+    }
+    return out;;
+  },
 };
+
+/** Walk up from a toolbar element until we hit an ancestor containing the
+ *  rendered message content (.markdown / .whitespace-pre-wrap). Searches
+ *  several levels so it survives ChatGPT's nested wrapper refactors. */
+function findContentAncestor(toolbar) {
+  let node = toolbar;
+  for (let depth = 0; depth < 8 && node; depth++) {
+    node = node.parentElement;
+    if (!node) break;
+    const content =
+      node.querySelector('.markdown') ||
+      node.querySelector('[class*="markdown"]') ||
+      node.querySelector('.whitespace-pre-wrap');
+    if (content) return content;
+  }
+  return null;
+}

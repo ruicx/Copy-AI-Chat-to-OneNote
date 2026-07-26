@@ -62,12 +62,41 @@ export function renderMessage(msg) {
  * @returns {{html:string, text:string}}
  */
 export function renderConversation(messages) {
+  const html = renderMessagesHtml(messages);
+  return { html, text: htmlToPlainText(html) };
+}
+
+/**
+ * Build clipboard payloads for a single conversation turn: one user question
+ * plus all the assistant messages that follow it (up to the next user turn).
+ * @param {{role:string, el:Element}[]} messages  full message list (DOM order)
+ * @param {number} startIndex  index of the user message that starts this turn
+ * @returns {{html:string, text:string, nextIndex:number}}
+ *          nextIndex = index of the next user message (or messages.length)
+ */
+export function renderTurn(messages, startIndex) {
+  const msgs = messages.slice(startIndex);
+  // Take the leading message and every following assistant message.
+  const turn = [];
+  for (let i = 0; i < msgs.length; i++) {
+    if (i === 0) {
+      turn.push(msgs[i]); // the user question (or whatever leads)
+      continue;
+    }
+    if (msgs[i].role === 'user') break; // next turn begins
+    turn.push(msgs[i]);
+  }
+  const html = renderMessagesHtml(turn);
+  return { html, text: htmlToPlainText(html), nextIndex: startIndex + turn.length };
+}
+
+/** Shared renderer: badge each message and join with dividers. */
+function renderMessagesHtml(messages) {
   const DIVIDER = '<hr style="border:none;border-top:2px solid #d1d5db;margin:16px 0">';
   const parts = messages.map(m => {
     const md = htmlToMd(m.el);
     const bodyHtml = mdToOneNoteHtml(md);
     return frameMessageHtml(m.role, bodyHtml);
   });
-  const html = parts.join(`\n${DIVIDER}\n`);
-  return { html, text: htmlToPlainText(html) };
+  return parts.join(`\n${DIVIDER}\n`);
 }

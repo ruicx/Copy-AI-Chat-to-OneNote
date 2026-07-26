@@ -71,8 +71,55 @@
         const { role, content } = contentOf(turn);
         return { role, el: content };
       });
+    },
+    /**
+     * ChatGPT renders its own action toolbar under each message, containing
+     * native buttons like 复制回复 / 喜欢. We inject our own buttons INTO these
+     * toolbars so they match the site's look exactly.
+     *
+     * Located via the stable data-testid="copy-turn-action-button" (the toolbar
+     * is that button's parent), with aria-label / role=group as fallbacks.
+     * Role is decided by whether the toolbar has an "编辑消息" button (user-only).
+     *
+     * Returns one entry per message toolbar: { toolbar, content, role }.
+     */
+    getNativeToolbars() {
+      const out = [];
+      let copyBtns = queryAll(['[data-testid="copy-turn-action-button"]']);
+      if (!copyBtns.length) {
+        copyBtns = queryAll([
+          '[aria-label="\u590D\u5236\u56DE\u590D"]',
+          '[aria-label="\u590D\u5236\u6D88\u606F"]',
+          '[aria-label="Copy response"]',
+          '[aria-label="Copy message"]'
+        ]);
+      }
+      const seen = /* @__PURE__ */ new Set();
+      for (const btn of copyBtns) {
+        const toolbar = btn.parentElement;
+        if (!toolbar || seen.has(toolbar)) continue;
+        seen.add(toolbar);
+        const hasEdit = !!toolbar.querySelector(
+          '[aria-label="\u7F16\u8F91\u6D88\u606F"], [aria-label="Edit message"], [data-testid="edit-message-action-button"]'
+        );
+        const role = hasEdit ? "user" : "assistant";
+        const content = findContentAncestor(toolbar);
+        if (content) out.push({ toolbar, content, role });
+      }
+      return out;
+      ;
     }
   };
+  function findContentAncestor(toolbar) {
+    let node = toolbar;
+    for (let depth = 0; depth < 8 && node; depth++) {
+      node = node.parentElement;
+      if (!node) break;
+      const content = node.querySelector(".markdown") || node.querySelector('[class*="markdown"]') || node.querySelector(".whitespace-pre-wrap");
+      if (content) return content;
+    }
+    return null;
+  }
 
   // src/platforms/gemini.js
   function conversationRoot() {
@@ -2578,16 +2625,33 @@ ${bodyHtml}`;
     return { html: html2, text: htmlToPlainText(html2), md };
   }
   function renderConversation(messages) {
+    const html2 = renderMessagesHtml(messages);
+    return { html: html2, text: htmlToPlainText(html2) };
+  }
+  function renderTurn(messages, startIndex) {
+    const msgs = messages.slice(startIndex);
+    const turn = [];
+    for (let i = 0; i < msgs.length; i++) {
+      if (i === 0) {
+        turn.push(msgs[i]);
+        continue;
+      }
+      if (msgs[i].role === "user") break;
+      turn.push(msgs[i]);
+    }
+    const html2 = renderMessagesHtml(turn);
+    return { html: html2, text: htmlToPlainText(html2), nextIndex: startIndex + turn.length };
+  }
+  function renderMessagesHtml(messages) {
     const DIVIDER = '<hr style="border:none;border-top:2px solid #d1d5db;margin:16px 0">';
     const parts = messages.map((m) => {
       const md = htmlToMd(m.el);
       const bodyHtml = mdToOneNoteHtml(md);
       return frameMessageHtml(m.role, bodyHtml);
     });
-    const html2 = parts.join(`
+    return parts.join(`
 ${DIVIDER}
 `);
-    return { html: html2, text: htmlToPlainText(html2) };
   }
 
   // src/clipboard.js
@@ -2803,39 +2867,141 @@ ${DIVIDER}
   function mountPerMessageButtons(adapter) {
     const shadow = document.shadowRoots ? null : createShadowRoot();
     const hostShadow = shadow || document.getElementById("ai-copy-host").shadowRoot;
-    const attachTo = (el) => {
-      if (el.dataset.aiCopyBound) return;
-      el.dataset.aiCopyBound = "1";
-      el.style.position = getComputedStyle(el).position === "static" ? "relative" : "";
+    async function copyOne(role, el, label) {
+      try {
+        const { html: html2, text } = renderMessage({ role, el });
+        await copyForOneNote(html2, text);
+        toast(hostShadow, label);
+      } catch (err) {
+        toast(hostShadow, "\u2717 \u590D\u5236\u5931\u8D25\uFF1A" + (err && err.message || err), 3e3);
+      }
+    }
+    async function copyTurn(contentEl, label) {
+      try {
+        const messages = adapter.getMessages();
+        const start = messages.findIndex((m) => m.el === contentEl);
+        if (start < 0) throw new Error("\u672A\u627E\u5230\u8BE5\u6D88\u606F");
+        const { html: html2, text } = renderTurn(messages, start);
+        await copyForOneNote(html2, text);
+        toast(hostShadow, label);
+      } catch (err) {
+        toast(hostShadow, "\u2717 \u590D\u5236\u5931\u8D25\uFF1A" + (err && err.message || err), 3e3);
+      }
+    }
+    if (typeof adapter.getNativeToolbars === "function") {
+      mountNativeToolbarButtons(adapter, hostShadow, copyOne, copyTurn);
+    } else {
+      mountOverlayButtons(adapter, hostShadow, copyOne, copyTurn);
+    }
+  }
+  function mountNativeToolbarButtons(adapter, hostShadow, copyOne, copyTurn) {
+    const NATIVE_BTN_CLASS = "text-token-text-secondary hover:bg-token-surface-hover rounded-lg";
+    const SPAN_CLASS = "flex items-center justify-center touch:w-10 h-8 w-8";
+    function ensureSharedTip() {
+      let tip = document.getElementById("aicopy-shared-tip");
+      if (tip) return tip;
+      tip = document.createElement("div");
+      tip.id = "aicopy-shared-tip";
+      tip.style.cssText = 'position:fixed;background:#0d0d0d;color:#ffffff;font-size:12px;line-height:16px;font-weight:600;padding:5px 9px;border-radius:6px;white-space:nowrap;opacity:0;pointer-events:none;z-index:2147483647;transition:opacity .1s ease;font-family:-apple-system-body,ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,Arial,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.18)';
+      document.body.appendChild(tip);
+      return tip;
+    }
+    function showTip(tip, anchor, text) {
+      tip.textContent = text;
+      const r = anchor.getBoundingClientRect();
+      tip.style.left = Math.max(4, Math.min(r.left + r.width / 2, window.innerWidth - 4)) + "px";
+      tip.style.top = r.bottom + 8 + "px";
+      tip.style.transform = "translateX(-50%)";
+      tip.style.opacity = "1";
+    }
+    function hideTip(tip) {
+      tip.style.opacity = "0";
+    }
+    const svgAttrs = 'xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+    const CLIPBOARD_SVG = `<svg ${svgAttrs}><path d="M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184"/></svg>`;
+    const CLIPBOARD_DOC_SVG = `<svg ${svgAttrs}><path d="M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5A3.375 3.375 0 0 0 6.375 7.5H5.25m11.9-3.664A2.251 2.251 0 0 0 15 2.25h-1.5a2.251 2.251 0 0 0-2.15 1.586m5.8 0c.065.21.1.433.1.664v.75h-6V4.5c0-.231.035-.454.1-.664M6.75 7.5H4.875c-.621 0-1.125.504-1.125 1.125v12c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V16.5a9 9 0 0 0-9-9Z"/></svg>`;
+    const sharedTip = ensureSharedTip();
+    function makeNativeButton(title, double) {
       const btn = document.createElement("button");
-      btn.className = "copy-btn";
-      btn.textContent = "\u{1F4CB} \u590D\u5236";
-      btn.style.position = "absolute";
-      btn.style.top = "4px";
-      btn.style.right = "4px";
-      btn.style.zIndex = "10";
-      btn.style.opacity = "0";
-      el.addEventListener("mouseenter", () => btn.style.opacity = "1");
-      el.addEventListener("mouseleave", () => btn.style.opacity = "0");
-      btn.addEventListener("click", async (e) => {
+      btn.type = "button";
+      btn.className = NATIVE_BTN_CLASS;
+      btn.setAttribute("aria-label", title);
+      btn.setAttribute("data-state", "closed");
+      const span = document.createElement("span");
+      span.className = SPAN_CLASS;
+      span.innerHTML = double ? CLIPBOARD_DOC_SVG : CLIPBOARD_SVG;
+      btn.appendChild(span);
+      btn.addEventListener("mouseenter", () => showTip(sharedTip, btn, title));
+      btn.addEventListener("mouseleave", () => hideTip(sharedTip));
+      btn.addEventListener("focus", () => showTip(sharedTip, btn, title));
+      btn.addEventListener("blur", () => hideTip(sharedTip));
+      return btn;
+    }
+    const attach = ({ toolbar, content, role }) => {
+      if (toolbar.dataset.aiCopyBound) return;
+      toolbar.dataset.aiCopyBound = "1";
+      const singleBtn = makeNativeButton("\u590D\u5236\u672C\u6761\u5230 OneNote", false);
+      singleBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        const role = adapter.getRole ? adapter.getRole(el) : "assistant";
-        try {
-          const { html: html2, text } = renderMessage({ role, el });
-          await copyForOneNote(html2, text);
-          toast(hostShadow, "\u2713 \u5DF2\u590D\u5236\u8BE5\u6D88\u606F");
-        } catch (err) {
-          toast(hostShadow, "\u2717 \u590D\u5236\u5931\u8D25\uFF1A" + (err && err.message || err), 3e3);
-        }
+        copyOne(role, content, "\u2713 \u5DF2\u590D\u5236\u8BE5\u6D88\u606F");
       });
-      el.appendChild(btn);
+      toolbar.appendChild(singleBtn);
+      if (role === "user") {
+        const turnBtn = makeNativeButton("\u590D\u5236\u672C\u8F6E\u5230 OneNote", true);
+        turnBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          copyTurn(content, "\u2713 \u5DF2\u590D\u5236\u672C\u8F6E\u5BF9\u8BDD");
+        });
+        toolbar.appendChild(turnBtn);
+      }
     };
-    const scan = () => {
-      (adapter.getMessageElements?.() || []).forEach(attachTo);
-    };
+    const scan = () => adapter.getNativeToolbars().forEach(attach);
     scan();
     const obs = new MutationObserver(() => scan());
     obs.observe(document.body, { childList: true, subtree: true });
+  }
+  function mountOverlayButtons(adapter, hostShadow, copyOne, copyTurn) {
+    const attachTo = (el, indexInList) => {
+      if (el.dataset.aiCopyBound) return;
+      el.dataset.aiCopyBound = "1";
+      el.style.position = getComputedStyle(el).position === "static" ? "relative" : "";
+      const role = adapter.getRole ? adapter.getRole(el) : "assistant";
+      const singleBtn = makeOverlayButton("\u{1F4CB} \u672C\u6761");
+      singleBtn.style.right = "4px";
+      singleBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        copyOne(role, el, "\u2713 \u5DF2\u590D\u5236\u8BE5\u6D88\u606F");
+      });
+      const buttons = [singleBtn];
+      if (role === "user") {
+        const turnBtn = makeOverlayButton("\u{1F4CB} \u672C\u8F6E");
+        turnBtn.style.right = "70px";
+        turnBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          copyTurn(el, "\u2713 \u5DF2\u590D\u5236\u672C\u8F6E\u5BF9\u8BDD");
+        });
+        buttons.push(turnBtn);
+      }
+      for (const b of buttons) {
+        b.style.opacity = "0";
+        el.appendChild(b);
+      }
+      el.addEventListener("mouseenter", () => buttons.forEach((b) => b.style.opacity = "1"));
+      el.addEventListener("mouseleave", () => buttons.forEach((b) => b.style.opacity = "0"));
+    };
+    const scan = () => (adapter.getMessageElements?.() || []).forEach(attachTo);
+    scan();
+    const obs = new MutationObserver(() => scan());
+    obs.observe(document.body, { childList: true, subtree: true });
+  }
+  function makeOverlayButton(label) {
+    const btn = document.createElement("button");
+    btn.className = "copy-btn";
+    btn.textContent = label;
+    btn.style.position = "absolute";
+    btn.style.top = "4px";
+    btn.style.zIndex = "10";
+    return btn;
   }
 
   // src/index.js

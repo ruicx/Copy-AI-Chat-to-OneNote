@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseHTML } from 'linkedom';
-import { renderMessage, renderConversation } from '../src/pipeline.js';
+import { renderMessage, renderConversation, renderTurn } from '../src/pipeline.js';
 import { setNodeDomParser } from '../src/converter.js';
 
 // Inject linkedom as the DOM backend so converter (and pipeline's
@@ -56,4 +56,35 @@ test('plain-text fallback is non-empty and contains content', () => {
   const { text } = renderConversation([makeMsg('user', '<p>hello world</p>')]);
   assert.match(text, /用户/);
   assert.match(text, /hello world/);
+});
+
+test('renderTurn copies one user question + its following answers', () => {
+  const msgs = [
+    makeMsg('user', '<p>Q1</p>'),
+    makeMsg('assistant', '<p>A1</p>'),
+    makeMsg('user', '<p>Q2</p>'),
+    makeMsg('assistant', '<p>A2</p>'),
+  ];
+  // Turn starting at index 2 (Q2) should include only Q2 + A2.
+  const { html, nextIndex } = renderTurn(msgs, 2);
+  assert.equal(nextIndex, 4, 'consumed to end');
+  assert.match(html, /Q2/);
+  assert.match(html, /A2/);
+  assert.doesNotMatch(html, /Q1/);
+  assert.doesNotMatch(html, /A1/);
+});
+
+test('renderTurn includes multiple consecutive assistant replies', () => {
+  const msgs = [
+    makeMsg('user', '<p>Q</p>'),
+    makeMsg('assistant', '<p>A-part1</p>'),
+    makeMsg('assistant', '<p>A-part2</p>'),
+    makeMsg('user', '<p>next question</p>'),
+  ];
+  const { html, nextIndex } = renderTurn(msgs, 0);
+  assert.equal(nextIndex, 3, 'stops before next user turn');
+  assert.match(html, /Q/);
+  assert.match(html, /A-part1/);
+  assert.match(html, /A-part2/);
+  assert.doesNotMatch(html, /next question/);
 });
