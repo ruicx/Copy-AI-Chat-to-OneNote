@@ -1,0 +1,58 @@
+<!--
+  ChatGPT DOM fixture — based on the verified 2025 structure:
+    <div data-message-author-role="user|assistant" data-message-id="...">
+      assistant body: <div class="markdown prose ...">
+      user body: <div class="whitespace-pre-wrap">
+  This is a static reconstruction for selector regression tests. It mirrors
+  the real nesting and class names closely enough to validate the adapter.
+-->
+<div id="thread">
+  <!-- USER turn -->
+  <div data-message-author-role="user" data-message-id="u-1">
+    <div class="flex grow">
+      <div class="whitespace-pre-wrap">请解释 Python 的列表推导式，并给个表格对比循环写法。</div>
+    </div>
+  </div>
+
+  <!-- ASSISTANT turn with rich content -->
+  <div data-message-author-role="assistant" data-message-id="a-1">
+    <div>
+      <div class="markdown prose w-full break-words dark:prose-invert">
+        <h2>什么是列表推导式</h2>
+        <p>列表推导式（list comprehension）是 Python 中用 <strong>一行</strong> 创建列表的简洁语法。例如：</p>
+        <pre><code class="language-python">squares = [x*x for x in range(10)]</code></pre>
+        <h3>对比传统循环</h3>
+        <table>
+          <thead>
+            <tr><th>写法</th><th>行数</th><th>可读性</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>推导式</td><td>1</td><td>高</td></tr>
+            <tr><td>for 循环</td><td>3</td><td>中</td></tr>
+          </tbody>
+        </table>
+        <ul>
+          <li>适合简单变换</li>
+          <li>可嵌套 <code>if</code> 过滤</li>
+          <li>不要过度使用以免可读性下降</li>
+        </ul>
+        <blockquote>简单即美。</blockquote>
+        <p>参考 <a href="https://docs.python.org/3/tutorial/datastructures.html#list-comprehensions">官方文档</a>。</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- USER follow-up -->
+  <div data-message-author-role="user" data-message-id="u-2">
+    <div class="whitespace-pre-wrap">再给个嵌套的例子？</div>
+  </div>
+
+  <!-- ASSISTANT follow-up -->
+  <div data-message-author-role="assistant" data-message-id="a-2">
+    <div>
+      <div class="markdown prose w-full break-words">
+        <pre><code class="language-python">matrix = [[i*j for j in range(3)] for i in range(3)]</code></pre>
+      </div>
+    </div>
+  </div>
+</div>
