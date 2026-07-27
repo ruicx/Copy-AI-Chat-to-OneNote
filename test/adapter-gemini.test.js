@@ -78,10 +78,10 @@ test('user toolbar appends at the END (no insertAfter, lands after 修改提示)
   assert.ok(!userBar.insertAfter, 'user toolbar must NOT anchor insertAfter');
 });
 
-test('adapter configures Material-style tooltip (above, regular weight)', () => {
-  // Gemini's own tooltips pop ABOVE the button with regular-weight text; our
+test('adapter configures Material-style tooltip (below, regular weight)', () => {
+  // Gemini's own tooltips pop BELOW the button with regular-weight text; our
   // tooltip must match so it doesn't look out of place.
-  assert.equal(adapter.tooltipStyle.position, 'above');
+  assert.equal(adapter.tooltipStyle.position, 'below');
   assert.equal(adapter.tooltipStyle.fontWeight, '400');
 });
 

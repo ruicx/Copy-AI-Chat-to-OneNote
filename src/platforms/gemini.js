@@ -56,12 +56,12 @@ export default {
   host: ['gemini.google.com'],
   name: 'Gemini',
 
-  // Gemini's Material tooltips appear ABOVE the button and use regular-weight
+  // Gemini's Material tooltips appear BELOW the button and use regular-weight
   // text (its own copy/like buttons behave the same). Match that so our
-  // tooltip doesn't look out of place next to Gemini's. (ChatGPT uses the
-  // default: below the button, semibold.)
+  // tooltip doesn't look out of place next to Gemini's. (ChatGPT also shows
+  // below but uses semibold — see the default in ui.js.)
   tooltipStyle: {
-    position: 'above',
+    position: 'below',
     fontWeight: '400',
     fontFamily: '"Google Sans",Roboto,-apple-system-body,ui-sans-serif,system-ui,"Segoe UI",Helvetica,Arial,sans-serif',
   },
