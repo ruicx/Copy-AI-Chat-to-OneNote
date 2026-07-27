@@ -122,39 +122,39 @@
   }
 
   // src/platforms/gemini.js
-  function conversationRoot() {
-    return queryFirst(['[data-test-id="conversation"]', "chat-history", 'main[role="main"]']) || document.querySelector("main") || document.body;
-  }
   function turns(root4) {
-    return queryAll(
-      [
-        '[data-test-id^="conversation-turn"]',
-        '[class*="conversation-turn"]',
-        "model-response",
-        "user-query"
-      ],
-      root4
-    );
+    const merged = [...root4.querySelectorAll("user-query, model-response")];
+    if (merged.length) return merged;
+    return [...root4.querySelectorAll('[class*="conversation-turn"]')];
+  }
+  function contentOf2(turn) {
+    const tag2 = turn.tagName.toLowerCase();
+    if (tag2 === "user-query") {
+      return turn.querySelector(".query-text") || turn;
+    }
+    if (tag2 === "model-response") {
+      return turn.querySelector(".markdown") || turn.querySelector(".model-response-text") || turn;
+    }
+    return turn.querySelector(".query-text") || turn.querySelector(".markdown") || turn;
+  }
+  function roleOf(turn) {
+    const tag2 = turn.tagName.toLowerCase();
+    if (tag2 === "user-query") return "user";
+    if (tag2 === "model-response") return "assistant";
+    const hint = turn.className || "";
+    return /query|user/i.test(hint) ? "user" : "assistant";
   }
   var gemini_default = {
     host: ["gemini.google.com"],
     name: "Gemini",
     getMessageElements() {
-      return turns(conversationRoot());
+      return turns(document);
     },
     getRole(el) {
-      const hint = el.getAttribute("data-test-id") || el.className || "";
-      if (/user-query|user-query|query-text/i.test(hint)) return "user";
-      if (/model-response|response-container|model-response-text/i.test(hint)) return "assistant";
-      return "assistant";
+      return roleOf(el);
     },
     getMessages() {
-      const root4 = conversationRoot();
-      return turns(root4).map((el) => {
-        const role = this.getRole(el);
-        const content = el.querySelector("message-content") || el.querySelector('[class*="model-response-text"]') || el.querySelector('[class*="query-text"]') || el;
-        return { role, el: content };
-      });
+      return turns(document).map((turn) => ({ role: roleOf(turn), el: contentOf2(turn) }));
     }
   };
 
@@ -2601,12 +2601,17 @@ ${text}</tr>
   };
   var BADGE_LABEL = { user: "\u{1F9D1} \u7528\u6237", assistant: "\u{1F916} AI" };
   function htmlToPlainText(html2) {
-    const tmp = document.createElement("div");
-    tmp.innerHTML = html2;
-    tmp.querySelectorAll("p,div,li,tr,h1,h2,h3,h4,h5,h6").forEach((el) => {
+    let root4;
+    if (typeof DOMParser !== "undefined") {
+      root4 = new DOMParser().parseFromString(html2, "text/html").body;
+    } else {
+      root4 = document.createElement("div");
+      root4.innerHTML = html2;
+    }
+    root4.querySelectorAll("p,div,li,tr,h1,h2,h3,h4,h5,h6").forEach((el) => {
       el.append("\n");
     });
-    return (tmp.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
+    return (root4.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
   }
   function roleBadge(role) {
     const style = BADGE_STYLES[role] || BADGE_STYLES.assistant;
@@ -2627,6 +2632,12 @@ ${bodyHtml}`;
   function renderConversation(messages) {
     const html2 = renderMessagesHtml(messages);
     return { html: html2, text: htmlToPlainText(html2) };
+  }
+  function findTurnIndex(messages, el) {
+    if (!el) return -1;
+    let idx = messages.findIndex((m) => m.el === el);
+    if (idx >= 0) return idx;
+    return messages.findIndex((m) => m.el && (m.el.contains(el) || el.contains(m.el)));
   }
   function renderTurn(messages, startIndex) {
     const msgs = messages.slice(startIndex);
@@ -2879,7 +2890,7 @@ ${DIVIDER}
     async function copyTurn(contentEl, label) {
       try {
         const messages = adapter.getMessages();
-        const start = messages.findIndex((m) => m.el === contentEl);
+        const start = findTurnIndex(messages, contentEl);
         if (start < 0) throw new Error("\u672A\u627E\u5230\u8BE5\u6D88\u606F");
         const { html: html2, text } = renderTurn(messages, start);
         await copyForOneNote(html2, text);
@@ -3006,6 +3017,12 @@ ${DIVIDER}
 
   // src/index.js
   var ADAPTERS = [chatgpt_default, gemini_default, claude_default, deepseek_default, kimi_default, doubao_default];
+  if (window.trustedTypes && window.trustedTypes.createPolicy) {
+    try {
+      window.trustedTypes.createPolicy("default", { createHTML: (s) => s });
+    } catch (_) {
+    }
+  }
   function pickAdapter() {
     return ADAPTERS.find((a) => [].concat(a.host).some((h) => location.hostname === h || location.hostname.endsWith("." + h)));
   }

@@ -15,6 +15,16 @@ import { mountFloatingButton, mountPerMessageButtons } from './ui.js';
 
 const ADAPTERS = [chatgpt, gemini, claude, deepseek, kimi, doubao];
 
+// Some AI sites (notably Gemini) enforce a Trusted Types policy that rejects
+// raw innerHTML assignment on the live document. Install a permissive default
+// policy so our DOM building (and any code we run alongside) works there.
+// Wrapped in try/catch: a default policy can only be created once per document.
+if (window.trustedTypes && window.trustedTypes.createPolicy) {
+  try {
+    window.trustedTypes.createPolicy('default', { createHTML: (s) => s });
+  } catch (_) { /* default policy already installed */ }
+}
+
 function pickAdapter() {
   return ADAPTERS.find(a => [].concat(a.host).some(h => location.hostname === h || location.hostname.endsWith('.' + h)));
 }

@@ -5,7 +5,7 @@
  * Buttons call into the pipeline + clipboard; copy is always triggered from a
  * user click (required for clipboard write).
  */
-import { renderMessage, renderConversation, renderTurn } from './pipeline.js';
+import { renderMessage, renderConversation, renderTurn, findTurnIndex } from './pipeline.js';
 import { copyForOneNote } from './clipboard.js';
 
 const STYLES = `
@@ -205,11 +205,14 @@ export function mountPerMessageButtons(adapter) {
     }
   }
 
-  /** Copy the whole turn starting at the message whose content === el. */
+  /** Copy the whole turn starting at the message whose content corresponds
+   *  to el. Use findTurnIndex (DOM-containment fallback) instead of strict ===
+   *  because the per-message UI element and getMessages().el are found via
+   *  different DOM paths and aren't always the identical node. */
   async function copyTurn(contentEl, label) {
     try {
       const messages = adapter.getMessages();
-      const start = messages.findIndex(m => m.el === contentEl);
+      const start = findTurnIndex(messages, contentEl);
       if (start < 0) throw new Error('未找到该消息');
       const { html, text } = renderTurn(messages, start);
       await copyForOneNote(html, text);

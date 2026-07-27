@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseHTML } from 'linkedom';
-import { renderMessage, renderConversation, renderTurn } from '../src/pipeline.js';
+import { renderMessage, renderConversation, renderTurn, findTurnIndex } from '../src/pipeline.js';
 import { setNodeDomParser } from '../src/converter.js';
 
 // Inject linkedom as the DOM backend so converter (and pipeline's
@@ -87,4 +87,39 @@ test('renderTurn includes multiple consecutive assistant replies', () => {
   assert.match(html, /A-part1/);
   assert.match(html, /A-part2/);
   assert.doesNotMatch(html, /next question/);
+});
+
+test('findTurnIndex matches the exact node when present', () => {
+  const msgs = [
+    makeMsg('user', '<p>Q1</p>'),
+    makeMsg('assistant', '<p>A1</p>'),
+    makeMsg('user', '<p>Q2</p>'),
+  ];
+  assert.equal(findTurnIndex(msgs, msgs[2].el), 2);
+  assert.equal(findTurnIndex(msgs, msgs[0].el), 0);
+});
+
+test('findTurnIndex falls back to DOM containment (the turn-content bug)', () => {
+  // Reproduces the real failure: the UI is given an OUTER turn element while
+  // getMessages().el is the INNER content node. Strict === never matches;
+  // containment must rescue it. (Gemini: <user-query> vs <div class="query-text">.
+  //  ChatGPT: toolbar-walk ancestor vs .markdown node.)
+  const { document: outerDoc } = parseHTML(
+    '<body><user-query><div class="query-text">hello</div></user-query></body>'
+  );
+  const turn = outerDoc.querySelector('user-query');
+  const content = outerDoc.querySelector('.query-text');
+  const msgs = [{ role: 'user', el: content }];
+  // Strict === would return -1 here.
+  assert.equal(findTurnIndex(msgs, turn), 0, 'outer turn resolves to its inner content');
+  // And the reverse direction: messages[].el is outer, lookup is inner.
+  assert.equal(findTurnIndex([{ role: 'user', el: turn }], content), 0);
+  // No relation at all → -1.
+  const { document: other } = parseHTML('<body><p>unrelated</p></body>');
+  assert.equal(findTurnIndex(msgs, other.querySelector('p')), -1);
+});
+
+test('findTurnIndex handles null / empty input', () => {
+  assert.equal(findTurnIndex([], null), -1);
+  assert.equal(findTurnIndex([{ role: 'user', el: null }], null), -1);
 });

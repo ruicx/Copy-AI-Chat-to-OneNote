@@ -20,14 +20,22 @@ const BADGE_STYLES = {
 };
 const BADGE_LABEL = { user: '🧑 用户', assistant: '🤖 AI' };
 
-/** Cheap HTML → plain text for the text/plain clipboard slot. */
+/** Cheap HTML → plain text for the text/plain clipboard slot.
+ *  Parses into an inert document (DOMParser) so it works under Trusted Types
+ *  policies like Gemini's, which reject innerHTML on the live document.
+ *  Falls back to a detached element under Node tests (no DOMParser there). */
 function htmlToPlainText(html) {
-  const tmp = document.createElement('div');
-  tmp.innerHTML = html;
-  tmp.querySelectorAll('p,div,li,tr,h1,h2,h3,h4,h5,h6').forEach(el => {
+  let root;
+  if (typeof DOMParser !== 'undefined') {
+    root = new DOMParser().parseFromString(html, 'text/html').body;
+  } else {
+    root = document.createElement('div');
+    root.innerHTML = html;
+  }
+  root.querySelectorAll('p,div,li,tr,h1,h2,h3,h4,h5,h6').forEach(el => {
     el.append('\n');
   });
-  return (tmp.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
+  return (root.textContent || '').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /** Build the styled role-badge HTML that precedes a message body. */
@@ -64,6 +72,26 @@ export function renderMessage(msg) {
 export function renderConversation(messages) {
   const html = renderMessagesHtml(messages);
   return { html, text: htmlToPlainText(html) };
+}
+
+/**
+ * Locate the message whose content element corresponds to `el`.
+ *
+ * Strict === misses in practice because adapters expose elements via two
+ * different DOM paths that don't always return the very same node:
+ *   - getMessages().el is the inner rendered content (.markdown / .query-text)
+ *   - getMessageElements() / getNativeToolbars().content walk from the outer
+ *     turn or from the toolbar and may resolve to a different (often outer)
+ *     wrapper around the same text.
+ * So after the exact match fails we fall back to a DOM-containment check:
+ * either side containing the other means they describe the same message.
+ * Returns -1 if no message matches.
+ */
+export function findTurnIndex(messages, el) {
+  if (!el) return -1;
+  let idx = messages.findIndex(m => m.el === el);
+  if (idx >= 0) return idx;
+  return messages.findIndex(m => m.el && (m.el.contains(el) || el.contains(m.el)));
 }
 
 /**
