@@ -10,9 +10,9 @@ AI 平台自带的复制按钮输出的是 Markdown 或夹带框架样式的 HTM
 
 ## 工作原理
 
-```
-页面 DOM ─▶ [① DOM→Markdown] ─▶ 干净 MD ─▶ [② Marked 渲染 + OneNote 后处理] ─▶ OneNote 友好 HTML ─▶ [③ ClipboardItem 多格式写入]
-```
+1. **DOM → Markdown** — `页面 DOM` → `干净 Markdown`（`converter.js`）
+2. **Markdown → OneNote HTML** — Marked 渲染 + OneNote 后处理（`renderer.js`）
+3. **ClipboardItem 写入** — 同时写 `text/html` + `text/plain`（`clipboard.js`）→ 粘贴到 OneNote 时标题/表格/代码块/列表保真
 
 - **为什么先转 Markdown 再渲染**：AI 页面渲染出的 HTML 夹杂大量框架类名、内联样式、嵌套 div、复制按钮、语法高亮 span、Angular/Lit 自定义元素。先转 MD 再渲染能洗掉这些噪声，保证输出干净且跨平台一致。
 - **为什么用 `ClipboardItem` 写双格式**：OneNote 有时优先取 `text/plain` 导致结构塌陷。同时写 `text/html`（结构）+ `text/plain`（兜底），OneNote 会优先解析 HTML。

@@ -19,9 +19,9 @@ reliably preserves on paste.
 
 ## How it works
 
-```
-live page DOM ─▶ [① DOM → Markdown] ─▶ clean MD ─▶ [② Marked + OneNote post-processing] ─▶ OneNote HTML ─▶ [③ ClipboardItem multi-format write]
-```
+1. **DOM → Markdown** — `live page DOM` → `clean Markdown` (`converter.js`)
+2. **Markdown → OneNote HTML** — Marked renders + OneNote post-processing (`renderer.js`)
+3. **ClipboardItem write** — writes `text/html` + `text/plain` together (`clipboard.js`) → paste into OneNote keeps headings / tables / code / lists
 
 - **Why convert to Markdown first, then re-render:** AI pages emit rendered
   HTML full of framework classes, inline styles, nested wrappers, copy
