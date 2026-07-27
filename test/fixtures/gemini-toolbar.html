@@ -1,0 +1,56 @@
+<!--
+  Faithful slice of Gemini's action toolbars, captured from a saved page.
+  Two turns: one user-query (with the luminous-actions-container holding the
+  prompt-copy-button) and one model-response (with actions-container-v2 >
+  buttons-container-v2 holding thumb-up / thumb-down / copy-button / more).
+  Stripped of Angular attribute noise; keeps the exact structural selectors
+  getNativeToolbars() relies on.
+-->
+<conversation>
+  <user-query>
+    <div class="query-text">怎么用 Python 写列表推导？</div>
+    <div class="luminous-actions-container">
+      <gem-icon-button data-test-id="prompt-copy-button" arialabel="复制提示">
+        <button class="mdc-icon-button mat-mdc-icon-button"><mat-icon>copy</mat-icon></button>
+      </gem-icon-button>
+      <gem-icon-button data-test-id="prompt-edit-button" arialabel="修改" gemtooltip="修改提示">
+        <button class="mdc-icon-button mat-mdc-icon-button"><mat-icon>edit</mat-icon></button>
+      </gem-icon-button>
+    </div>
+  </user-query>
+
+  <model-response>
+    <message-content>
+      <div class="model-response-text">
+        <div class="markdown markdown-main-panel"><p>用方括号写。</p></div>
+      </div>
+    </message-content>
+    <div class="actions-container-v2">
+      <div class="buttons-container-v2">
+        <thumb-up-button>
+          <gem-icon-button data-test-id="thumb-up-button" arialabel="答得好">
+            <button class="mdc-icon-button mat-mdc-icon-button"><mat-icon>thumb_up</mat-icon></button>
+          </gem-icon-button>
+        </thumb-up-button>
+        <thumb-down-button>
+          <gem-icon-button data-test-id="thumb-down-button" arialabel="答得不好">
+            <button class="mdc-icon-button mat-mdc-icon-button"><mat-icon>thumb_down</mat-icon></button>
+          </gem-icon-button>
+        </thumb-down-button>
+        <copy-button>
+          <gem-icon-button data-test-id="copy-button" arialabel="复制" gemtooltip="复制回答">
+            <button class="mdc-icon-button mat-mdc-icon-button"><mat-icon class="mat-icon lm-icon-m lumi-symbols mat-ligature-font" fonticon="copy">content_copy</mat-icon></button>
+          </gem-icon-button>
+        </copy-button>
+        <div class="menu-button-wrapper">
+          <gem-icon-button data-test-id="gv-copy-image-button" arialabel="复制">
+            <button class="mdc-icon-button mat-mdc-icon-button"><mat-icon>image</mat-icon></button>
+          </gem-icon-button>
+          <gem-icon-button gemmenutrigger arialabel="显示更多选项">
+            <button class="mdc-icon-button mat-mdc-icon-button"><mat-icon>more_vert</mat-icon></button>
+          </gem-icon-button>
+        </div>
+      </div>
+    </div>
+  </model-response>
+</conversation>
