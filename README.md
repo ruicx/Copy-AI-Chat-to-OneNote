@@ -38,11 +38,22 @@ that keep paste fidelity working.
 ## Install
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/) (Chrome / Edge /
-   Firefox).
-2. Open the Tampermonkey dashboard → Create a new script, paste the entire
-   contents of [`ai-chat-copy.user.js`](./ai-chat-copy.user.js), save.
+   Firefox) or [Violentmonkey](https://violentmonkey.github.io/).
+2. Click one of the install links below — the script manager will open an
+   install dialog automatically:
+
+   | Source | Link |
+   |--------|------|
+   | jsDelivr (faster in mainland China, no VPN) | **[install](https://cdn.jsdelivr.net/gh/ruicx/Copy-AI-Chat-to-OneNote@main/ai-chat-copy.user.js)** |
+   | GitHub raw | **[install](https://raw.githubusercontent.com/ruicx/Copy-AI-Chat-to-OneNote/main/ai-chat-copy.user.js)** |
+
+   > If neither link works, you can also copy the raw
+   > [`ai-chat-copy.user.js`](./ai-chat-copy.user.js) and paste it into a new
+   > Tampermonkey script manually.
 3. Open any supported AI platform. A floating 📋 button appears at the
    bottom-right, and copy buttons appear in each message's native toolbar.
+
+> After updating the script, re-click the same link to pull the latest version.
 
 ## Use
 

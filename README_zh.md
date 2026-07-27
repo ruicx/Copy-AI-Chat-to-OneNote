@@ -21,9 +21,18 @@ AI 平台自带的复制按钮输出的是 Markdown 或夹带框架样式的 HTM
 
 ## 安装
 
-1. 装浏览器扩展 [Tampermonkey](https://www.tampermonkey.net/)（Chrome/Edge/Firefox 均可）。
-2. 打开 Tampermonkey 仪表盘 → 新建脚本，把 [`ai-chat-copy.user.js`](./ai-chat-copy.user.js) 全部内容粘贴进去，保存。
+1. 装浏览器扩展 [Tampermonkey](https://www.tampermonkey.net/)（Chrome/Edge/Firefox 均可）或 [Violentmonkey](https://violentmonkey.github.io/)。
+2. 点击下面的安装链接——脚本管理器会自动弹出安装对话框：
+
+   | 来源 | 链接 |
+   |------|------|
+   | jsDelivr（国内速度快，无需翻墙） | **[安装](https://cdn.jsdelivr.net/gh/ruicx/Copy-AI-Chat-to-OneNote@main/ai-chat-copy.user.js)** |
+   | GitHub 原始文件（需翻墙） | **[安装](https://raw.githubusercontent.com/ruicx/Copy-AI-Chat-to-OneNote/main/ai-chat-copy.user.js)** |
+
+   > 如果两个链接都点不开，也可以手动复制 [`ai-chat-copy.user.js`](./ai-chat-copy.user.js) 的全部内容，在 Tampermonkey 新建脚本里粘贴。
 3. 打开任一支持的 AI 平台，右下角会出现 📋 浮动按钮，每条消息的原生工具栏里也会出现复制按钮。
+
+> 以后更新脚本，重新点一下同一个安装链接即可拉取最新版。
 
 ## 使用
 
