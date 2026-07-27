@@ -374,6 +374,105 @@
     }
   };
 
+  // src/i18n.js
+  var _locale = null;
+  function getLocale() {
+    if (_locale) return _locale;
+    if (typeof navigator !== "undefined") {
+      const lang = (navigator.language || navigator.userLanguage || "").toLowerCase();
+      if (lang.startsWith("zh")) return _locale = "zh";
+    }
+    return _locale = "en";
+  }
+  var STRINGS = {
+    // Toast shown after copying the whole conversation. {n} → message count.
+    toastConversation: {
+      zh: "\u2713 \u5DF2\u590D\u5236 {n} \u6761\u6D88\u606F\uFF0C\u53EF\u7C98\u8D34\u5230 OneNote",
+      en: "\u2713 Copied {n} messages \u2014 paste into OneNote"
+    },
+    // Toast shown after copying a single message.
+    toastOne: {
+      zh: "\u2713 \u5DF2\u590D\u5236\u8BE5\u6D88\u606F",
+      en: "\u2713 Message copied"
+    },
+    // Toast shown after copying one turn (question + its answers).
+    toastTurn: {
+      zh: "\u2713 \u5DF2\u590D\u5236\u672C\u8F6E\u5BF9\u8BDD",
+      en: "\u2713 Turn copied"
+    },
+    // Toast shown when a copy fails. {err} → the error message.
+    toastFail: {
+      zh: "\u2717 \u590D\u5236\u5931\u8D25\uFF1A{err}",
+      en: "\u2717 Copy failed: {err}"
+    },
+    // Title for the single-message copy button.
+    btnCopyOne: {
+      zh: "\u590D\u5236\u672C\u6761\u5230 OneNote",
+      en: "Copy this message to OneNote"
+    },
+    // Title for the copy-turn button (clipboard-document icon).
+    btnCopyTurn: {
+      zh: "\u590D\u5236\u672C\u8F6E\u5230 OneNote",
+      en: "Copy this turn to OneNote"
+    },
+    // Floating action button tooltip. The "(drag to move)" hint.
+    fabTitle: {
+      zh: "\u590D\u5236\u6574\u6BB5\u5BF9\u8BDD\u5230 OneNote\uFF08\u62D6\u52A8\u53EF\u79FB\u52A8\u4F4D\u7F6E\uFF09",
+      en: "Copy whole conversation to OneNote (drag to move)"
+    },
+    // Overlay (fallback) single-message button label.
+    overlayOne: {
+      zh: "\u{1F4CB} \u672C\u6761",
+      en: "\u{1F4CB} This"
+    },
+    // Overlay (fallback) copy-turn button label.
+    overlayTurn: {
+      zh: "\u{1F4CB} \u672C\u8F6E",
+      en: "\u{1F4CB} Turn"
+    },
+    // Role-badge labels prepended to each pasted message.
+    badgeUser: {
+      zh: "\u{1F9D1} \u7528\u6237",
+      en: "\u{1F9D1} You"
+    },
+    badgeAssistant: {
+      zh: "\u{1F916} AI",
+      en: "\u{1F916} AI"
+    },
+    // Image-placeholder tag. {n} → image number, {alt} → short caption (may be empty).
+    imageTag: {
+      zh: "\u56FE\u7247 {n}\uFF1A{alt}",
+      en: "Image {n}: {alt}"
+    },
+    // Image-placeholder tag when there is no caption.
+    imageTagNoAlt: {
+      zh: "\u56FE\u7247 {n}",
+      en: "Image {n}"
+    },
+    // Toast shown when no messages were found to copy.
+    toastNoMessages: {
+      zh: "\u672A\u68C0\u6D4B\u5230\u5BF9\u8BDD\u6D88\u606F",
+      en: "No conversation messages found"
+    },
+    // Error thrown when a per-message button can't map its element to a turn.
+    errNotFound: {
+      zh: "\u672A\u627E\u5230\u8BE5\u6D88\u606F",
+      en: "Message not found"
+    }
+  };
+  function t(key, vars) {
+    const entry = STRINGS[key];
+    if (!entry) return key;
+    const locale = getLocale();
+    let s = entry[locale] != null ? entry[locale] : entry.en;
+    if (vars) {
+      for (const k of Object.keys(vars)) {
+        s = s.replaceAll(`{${k}}`, vars[k]);
+      }
+    }
+    return s;
+  }
+
   // src/converter.js
   var nodeDomParse = null;
   function parseHTMLToFragment(html2) {
@@ -519,7 +618,7 @@
         if (typeof ctx.imgSeq !== "number") ctx.imgSeq = 0;
         ctx.imgSeq += 1;
         const shortAlt = cleanImageAlt(alt);
-        const label = shortAlt ? `\u56FE\u7247 ${ctx.imgSeq}\uFF1A${shortAlt}` : `\u56FE\u7247 ${ctx.imgSeq}`;
+        const label = shortAlt ? t("imageTag", { n: ctx.imgSeq, alt: shortAlt }) : t("imageTagNoAlt", { n: ctx.imgSeq });
         return `\u{1F5BC}\uFE0F [${label}]
 
 `;
@@ -639,8 +738,8 @@
     for (const tr of node.querySelectorAll("tr")) {
       const cells = [];
       for (const cell of tr.children) {
-        const t = cell.tagName.toLowerCase();
-        if (t !== "td" && t !== "th") continue;
+        const t2 = cell.tagName.toLowerCase();
+        if (t2 !== "td" && t2 !== "th") continue;
         cells.push(escapeTableCell(childrenToMd(cell, ctx)));
       }
       if (cells.length) rows.push(cells);
@@ -1026,7 +1125,7 @@ ${currentText}` : currentText;
           }
           raw = cap[0];
           src = src.substring(raw.length);
-          let line = cap[2].split("\n", 1)[0].replace(/^\t+/, (t) => " ".repeat(3 * t.length));
+          let line = cap[2].split("\n", 1)[0].replace(/^\t+/, (t2) => " ".repeat(3 * t2.length));
           let nextLine = src.split("\n", 1)[0];
           let blankLine = !line.trim();
           let indent = 0;
@@ -1139,8 +1238,8 @@ ${currentText}` : currentText;
           this.lexer.state.top = false;
           list2.items[i].tokens = this.lexer.blockTokens(list2.items[i].text, []);
           if (!list2.loose) {
-            const spacers = list2.items[i].tokens.filter((t) => t.type === "space");
-            const hasMultipleLineBreaks = spacers.length > 0 && spacers.some((t) => /\n.*\n/.test(t.raw));
+            const spacers = list2.items[i].tokens.filter((t2) => t2.type === "space");
+            const hasMultipleLineBreaks = spacers.length > 0 && spacers.some((t2) => /\n.*\n/.test(t2.raw));
             list2.loose = hasMultipleLineBreaks;
           }
         }
@@ -2796,7 +2895,7 @@ ${text}</tr>
     user: "background-color:#2563eb;color:#ffffff;font-size:11pt;font-weight:bold",
     assistant: "background-color:#0d9488;color:#ffffff;font-size:11pt;font-weight:bold"
   };
-  var BADGE_LABEL = { user: "\u{1F9D1} \u7528\u6237", assistant: "\u{1F916} AI" };
+  var BADGE_LABEL = { user: t("badgeUser"), assistant: t("badgeAssistant") };
   function htmlToPlainText(html2) {
     let root4;
     if (typeof DOMParser !== "undefined") {
@@ -2965,10 +3064,10 @@ ${DIVIDER}
     try {
       const { html: html2, text } = renderConversation(messages);
       await copyForOneNote(html2, text);
-      toast(shadow, `\u2713 \u5DF2\u590D\u5236 ${messages.length} \u6761\u6D88\u606F\uFF0C\u53EF\u7C98\u8D34\u5230 OneNote`);
+      toast(shadow, t("toastConversation", { n: messages.length }));
     } catch (err) {
       console.error("[ai-copy] copy failed", err);
-      toast(shadow, "\u2717 \u590D\u5236\u5931\u8D25\uFF1A" + (err && err.message || err), 3e3);
+      toast(shadow, t("toastFail", { err: err && err.message || err }), 3e3);
     }
   }
   var FAB_POSITION_KEY = "ai-copy-fab-position";
@@ -3054,12 +3153,12 @@ ${DIVIDER}
     const shadow = createShadowRoot();
     const fab = document.createElement("button");
     fab.className = "fab";
-    fab.title = "\u590D\u5236\u6574\u6BB5\u5BF9\u8BDD\u5230 OneNote\uFF08\u62D6\u52A8\u53EF\u79FB\u52A8\u4F4D\u7F6E\uFF09";
+    fab.title = t("fabTitle");
     fab.textContent = "\u{1F4CB}";
     fab.addEventListener("click", async () => {
       const messages = adapter.getMessages();
       if (!messages.length) {
-        toast(shadow, "\u672A\u68C0\u6D4B\u5230\u5BF9\u8BDD\u6D88\u606F", 2200);
+        toast(shadow, t("toastNoMessages"), 2200);
         return;
       }
       fab.disabled = true;
@@ -3082,19 +3181,19 @@ ${DIVIDER}
         await copyForOneNote(html2, text);
         toast(hostShadow, label);
       } catch (err) {
-        toast(hostShadow, "\u2717 \u590D\u5236\u5931\u8D25\uFF1A" + (err && err.message || err), 3e3);
+        toast(hostShadow, t("toastFail", { err: err && err.message || err }), 3e3);
       }
     }
     async function copyTurn(contentEl, label) {
       try {
         const messages = adapter.getMessages();
         const start = findTurnIndex(messages, contentEl);
-        if (start < 0) throw new Error("\u672A\u627E\u5230\u8BE5\u6D88\u606F");
+        if (start < 0) throw new Error(t("errNotFound"));
         const { html: html2, text } = renderTurn(messages, start);
         await copyForOneNote(html2, text);
         toast(hostShadow, label);
       } catch (err) {
-        toast(hostShadow, "\u2717 \u590D\u5236\u5931\u8D25\uFF1A" + (err && err.message || err), 3e3);
+        toast(hostShadow, t("toastFail", { err: err && err.message || err }), 3e3);
       }
     }
     if (typeof adapter.getNativeToolbars === "function") {
@@ -3168,17 +3267,17 @@ ${DIVIDER}
           toolbar.appendChild(btn);
         }
       };
-      const singleBtn = makeNativeButton(toolbar, "\u590D\u5236\u672C\u6761\u5230 OneNote", false);
+      const singleBtn = makeNativeButton(toolbar, t("btnCopyOne"), false);
       singleBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        copyOne(role, content, "\u2713 \u5DF2\u590D\u5236\u8BE5\u6D88\u606F");
+        copyOne(role, content, t("toastOne"));
       });
       place(singleBtn);
       if (role === "user") {
-        const turnBtn = makeNativeButton(toolbar, "\u590D\u5236\u672C\u8F6E\u5230 OneNote", true);
+        const turnBtn = makeNativeButton(toolbar, t("btnCopyTurn"), true);
         turnBtn.addEventListener("click", (e) => {
           e.stopPropagation();
-          copyTurn(content, "\u2713 \u5DF2\u590D\u5236\u672C\u8F6E\u5BF9\u8BDD");
+          copyTurn(content, t("toastTurn"));
         });
         place(turnBtn);
       }
@@ -3194,19 +3293,19 @@ ${DIVIDER}
       el.dataset.aiCopyBound = "1";
       el.style.position = getComputedStyle(el).position === "static" ? "relative" : "";
       const role = adapter.getRole ? adapter.getRole(el) : "assistant";
-      const singleBtn = makeOverlayButton("\u{1F4CB} \u672C\u6761");
+      const singleBtn = makeOverlayButton(t("overlayOne"));
       singleBtn.style.right = "4px";
       singleBtn.addEventListener("click", (e) => {
         e.stopPropagation();
-        copyOne(role, el, "\u2713 \u5DF2\u590D\u5236\u8BE5\u6D88\u606F");
+        copyOne(role, el, t("toastOne"));
       });
       const buttons = [singleBtn];
       if (role === "user") {
-        const turnBtn = makeOverlayButton("\u{1F4CB} \u672C\u8F6E");
+        const turnBtn = makeOverlayButton(t("overlayTurn"));
         turnBtn.style.right = "70px";
         turnBtn.addEventListener("click", (e) => {
           e.stopPropagation();
-          copyTurn(el, "\u2713 \u5DF2\u590D\u5236\u672C\u8F6E\u5BF9\u8BDD");
+          copyTurn(el, t("toastTurn"));
         });
         buttons.push(turnBtn);
       }

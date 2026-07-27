@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import { parseHTML } from 'linkedom';
 import { renderMessage, renderConversation, renderTurn, findTurnIndex } from '../src/pipeline.js';
 import { setNodeDomParser } from '../src/converter.js';
+import { setLocale } from '../src/i18n.js';
+
+// Pin locale to zh so the assertions on Chinese badge / placeholder labels
+// stay meaningful regardless of the test runner's environment (Node has no
+// navigator.language, so getLocale() would otherwise default to 'en').
+setLocale('zh');
 
 // Inject linkedom as the DOM backend so converter (and pipeline's
 // htmlToPlainText which uses document.createElement) work under Node.

@@ -8,6 +8,7 @@
  * The output is intentionally normalized so it can be re-rendered by Marked
  * into OneNote-friendly HTML in the next pipeline stage.
  */
+import { t } from './i18n.js';
 
 // --- DOM parser bootstrap -------------------------------------------------
 // In the browser, use the native DOMParser. In Node tests, linkedom is injected
@@ -252,7 +253,9 @@ function nodeToMd(node, ctx) {
       if (typeof ctx.imgSeq !== 'number') ctx.imgSeq = 0;
       ctx.imgSeq += 1;
       const shortAlt = cleanImageAlt(alt);
-      const label = shortAlt ? `图片 ${ctx.imgSeq}：${shortAlt}` : `图片 ${ctx.imgSeq}`;
+      const label = shortAlt
+        ? t('imageTag', { n: ctx.imgSeq, alt: shortAlt })
+        : t('imageTagNoAlt', { n: ctx.imgSeq });
       // Block-level: trailing blank line so the placeholder sits on its own
       // line in the rendered output (otherwise it runs into the next paragraph).
       return `🖼️ [${label}]\n\n`;

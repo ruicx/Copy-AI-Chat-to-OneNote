@@ -11,6 +11,7 @@
  */
 import { htmlToMd } from './converter.js';
 import { mdToOneNoteHtml } from './renderer.js';
+import { t } from './i18n.js';
 
 // Role badge styles. OneNote reliably honours background-color + color on a
 // <p>, so these render as solid colour bars that clearly distinguish speakers.
@@ -18,7 +19,7 @@ const BADGE_STYLES = {
   user: 'background-color:#2563eb;color:#ffffff;font-size:11pt;font-weight:bold',
   assistant: 'background-color:#0d9488;color:#ffffff;font-size:11pt;font-weight:bold',
 };
-const BADGE_LABEL = { user: '🧑 用户', assistant: '🤖 AI' };
+const BADGE_LABEL = { user: t('badgeUser'), assistant: t('badgeAssistant') };
 
 /** Cheap HTML → plain text for the text/plain clipboard slot.
  *  Parses into an inert document (DOMParser) so it works under Trusted Types

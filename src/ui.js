@@ -7,6 +7,7 @@
  */
 import { renderMessage, renderConversation, renderTurn, findTurnIndex } from './pipeline.js';
 import { copyForOneNote } from './clipboard.js';
+import { t } from './i18n.js';
 
 const STYLES = `
   :host { all: initial; }
@@ -68,10 +69,10 @@ async function doCopy(shadow, adapter, messages) {
   try {
     const { html, text } = renderConversation(messages);
     await copyForOneNote(html, text);
-    toast(shadow, `✓ 已复制 ${messages.length} 条消息，可粘贴到 OneNote`);
+    toast(shadow, t('toastConversation', { n: messages.length }));
   } catch (err) {
     console.error('[ai-copy] copy failed', err);
-    toast(shadow, '✗ 复制失败：' + (err && err.message || err), 3000);
+    toast(shadow, t('toastFail', { err: (err && err.message || err) }), 3000);
   }
 }
 
@@ -162,12 +163,12 @@ export function mountFloatingButton(adapter) {
   const shadow = createShadowRoot();
   const fab = document.createElement('button');
   fab.className = 'fab';
-  fab.title = '复制整段对话到 OneNote（拖动可移动位置）';
+  fab.title = t('fabTitle');
   fab.textContent = '📋';
   fab.addEventListener('click', async () => {
     const messages = adapter.getMessages();
     if (!messages.length) {
-      toast(shadow, '未检测到对话消息', 2200);
+      toast(shadow, t('toastNoMessages'), 2200);
       return;
     }
     fab.disabled = true;
@@ -201,7 +202,7 @@ export function mountPerMessageButtons(adapter) {
       await copyForOneNote(html, text);
       toast(hostShadow, label);
     } catch (err) {
-      toast(hostShadow, '✗ 复制失败：' + (err && err.message || err), 3000);
+      toast(hostShadow, t('toastFail', { err: (err && err.message || err) }), 3000);
     }
   }
 
@@ -213,12 +214,12 @@ export function mountPerMessageButtons(adapter) {
     try {
       const messages = adapter.getMessages();
       const start = findTurnIndex(messages, contentEl);
-      if (start < 0) throw new Error('未找到该消息');
+      if (start < 0) throw new Error(t('errNotFound'));
       const { html, text } = renderTurn(messages, start);
       await copyForOneNote(html, text);
       toast(hostShadow, label);
     } catch (err) {
-      toast(hostShadow, '✗ 复制失败：' + (err && err.message || err), 3000);
+      toast(hostShadow, t('toastFail', { err: (err && err.message || err) }), 3000);
     }
   }
 
@@ -348,18 +349,18 @@ function mountNativeToolbarButtons(adapter, hostShadow, copyOne, copyTurn) {
       }
     };
 
-    const singleBtn = makeNativeButton(toolbar, '复制本条到 OneNote', false);
+    const singleBtn = makeNativeButton(toolbar, t('btnCopyOne'), false);
     singleBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      copyOne(role, content, '✓ 已复制该消息');
+      copyOne(role, content, t('toastOne'));
     });
     place(singleBtn);
 
     if (role === 'user') {
-      const turnBtn = makeNativeButton(toolbar, '复制本轮到 OneNote', true);
+      const turnBtn = makeNativeButton(toolbar, t('btnCopyTurn'), true);
       turnBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        copyTurn(content, '✓ 已复制本轮对话');
+        copyTurn(content, t('toastTurn'));
       });
       place(turnBtn);
     }
@@ -381,20 +382,20 @@ function mountOverlayButtons(adapter, hostShadow, copyOne, copyTurn) {
     el.style.position = getComputedStyle(el).position === 'static' ? 'relative' : '';
     const role = adapter.getRole ? adapter.getRole(el) : 'assistant';
 
-    const singleBtn = makeOverlayButton('📋 本条');
+    const singleBtn = makeOverlayButton(t('overlayOne'));
     singleBtn.style.right = '4px';
     singleBtn.addEventListener('click', (e) => {
       e.stopPropagation();
-      copyOne(role, el, '✓ 已复制该消息');
+      copyOne(role, el, t('toastOne'));
     });
 
     const buttons = [singleBtn];
     if (role === 'user') {
-      const turnBtn = makeOverlayButton('📋 本轮');
+      const turnBtn = makeOverlayButton(t('overlayTurn'));
       turnBtn.style.right = '70px';
       turnBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        copyTurn(el, '✓ 已复制本轮对话');
+        copyTurn(el, t('toastTurn'));
       });
       buttons.push(turnBtn);
     }

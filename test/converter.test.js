@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import { parseHTML } from 'linkedom';
 import { readFileSync } from 'node:fs';
 import { htmlToMd, setNodeDomParser } from '../src/converter.js';
+import { setLocale } from '../src/i18n.js';
+
+// Pin locale to zh so the image-placeholder assertions (🖼️ [图片 …]) hold.
+// Node has no navigator.language, so getLocale() would otherwise default to
+// 'en' and produce "Image …". The en path is covered in i18n.test.js.
+setLocale('zh');
 
 // Inject linkedom as the DOM backend for Node-side testing.
 // NOTE: linkedom's `document.body` is an empty stub; the parsed content lives
