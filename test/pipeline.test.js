@@ -89,6 +89,22 @@ test('renderTurn includes multiple consecutive assistant replies', () => {
   assert.doesNotMatch(html, /next question/);
 });
 
+test('image placeholders number across all messages in a conversation', () => {
+  // Two assistant messages each containing an image must produce [图片 1]
+  // and [图片 2], NOT two [图片 1]s. The sequence counter is shared across
+  // the whole rendered conversation via one ctx.
+  const msgs = [
+    makeMsg('user', '<p>Q</p>'),
+    makeMsg('assistant', '<p>A1</p><img src="data:image/png;base64,AAAA" alt="first">'),
+    makeMsg('user', '<p>Q2</p>'),
+    makeMsg('assistant', '<p>A2</p><img src="data:image/png;base64,BBBB" alt="second">'),
+  ];
+  const { html } = renderConversation(msgs);
+  assert.match(html, /🖼️ \[图片 1：first\]/);
+  assert.match(html, /🖼️ \[图片 2：second\]/);
+  assert.doesNotMatch(html, /data:image/);
+});
+
 test('findTurnIndex matches the exact node when present', () => {
   const msgs = [
     makeMsg('user', '<p>Q1</p>'),

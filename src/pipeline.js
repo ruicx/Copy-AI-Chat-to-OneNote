@@ -121,8 +121,12 @@ export function renderTurn(messages, startIndex) {
 /** Shared renderer: badge each message and join with dividers. */
 function renderMessagesHtml(messages) {
   const DIVIDER = '<hr style="border:none;border-top:2px solid #d1d5db;margin:16px 0">';
+  // One ctx across all messages so per-image numbering keeps incrementing
+  // instead of restarting at 1 for every message ([图片 1],[图片 2],… not
+  // two separate [图片 1]s when two messages each contain an image).
+  const ctx = {};
   const parts = messages.map(m => {
-    const md = htmlToMd(m.el);
+    const md = htmlToMd(m.el, ctx);
     const bodyHtml = mdToOneNoteHtml(md);
     return frameMessageHtml(m.role, bodyHtml);
   });

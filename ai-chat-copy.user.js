@@ -294,7 +294,6 @@
   var DROP_TAGS = /* @__PURE__ */ new Set([
     "script",
     "style",
-    "button",
     "svg",
     "noscript",
     "template",
@@ -302,10 +301,67 @@
     "select",
     "textarea"
   ]);
+  var VISUALLY_HIDDEN_CLASS = /(^|\s)(cdk-visually-hidden|sr-only|visually-hidden|screen-reader-text|screen-reader)(\s|$)/i;
+  function isVisuallyHidden(node) {
+    const cls = node.getAttribute && (node.getAttribute("class") || "");
+    return !!cls && VISUALLY_HIDDEN_CLASS.test(cls);
+  }
+  var IMAGE_ELEMENT_TAGS = /* @__PURE__ */ new Set([
+    "img",
+    "single-image",
+    "generated-image",
+    "image-container",
+    "image-button",
+    "response-element",
+    "figure"
+  ]);
+  var CAPTION_LABEL_RE = /^(图像描述|图片描述|图片说明|图像说明|Image description|Image Description|Description|Caption|说明|描述)[:：]/;
+  function prevElementSibling(node) {
+    let s = node.previousSibling;
+    while (s && s.nodeType !== 1) s = s.previousSibling;
+    return s;
+  }
+  function isImageCaptionBlock(node) {
+    let prev = prevElementSibling(node);
+    for (let depth = 0; depth < 4 && prev; depth++) {
+      const tag2 = prev.tagName.toLowerCase();
+      if (IMAGE_ELEMENT_TAGS.has(tag2)) return true;
+      if (prev.querySelector && prev.querySelector("img, single-image, generated-image")) {
+        return true;
+      }
+      prev = prevElementSibling(prev);
+    }
+    const firstPara = node.querySelector("p, div");
+    if (firstPara) {
+      const lead = firstPara.querySelector("b, strong");
+      if (lead && CAPTION_LABEL_RE.test((lead.textContent || "").trim())) return true;
+    }
+    return false;
+  }
   function isFaviconIcon(src) {
     return /\/s2\/favicons?/.test(src) || // Google favicon service (ChatGPT citations)
     /favicon(s)?\?/i.test(src) || // generic favicon endpoint
     /\/favicon\.(ico|png|svg)/i.test(src);
+  }
+  function isNoiseImage(img) {
+    const src = (img.getAttribute("src") || "").trim();
+    const cls = img.getAttribute("class") || "";
+    if (/^data:,$/i.test(src)) return true;
+    if (/(^|\s)(mavatar-image|sparkle-image|profile|avatar|icon)(\s|$)/i.test(cls)) {
+      return true;
+    }
+    if (/^data:image\/svg\+xml/i.test(src)) return true;
+    return false;
+  }
+  function cleanImageAlt(alt) {
+    let s = (alt || "").trim();
+    if (!s) return "";
+    s = s.replace(/[,，]?\s*(AI\s*(generated|生成)|generated\s*by\s*AI)\s*$/i, "");
+    const firstClause = s.split(/[.,;。；！\n]/)[0];
+    s = firstClause.trim();
+    const MAX = 30;
+    if (s.length > MAX) s = s.slice(0, MAX).trimEnd() + "\u2026";
+    return s;
   }
   function escapeTableCell(text) {
     return String(text).replace(/\r\n/g, "\n").replace(/\n/g, " ").replace(/\|/g, "\\|").trim();
@@ -319,6 +375,7 @@
     if (nt !== 1) return "";
     const tag2 = node.tagName.toLowerCase();
     if (DROP_TAGS.has(tag2)) return "";
+    if (isVisuallyHidden(node)) return "";
     if (tag2 in INLINE) {
       const inner = childrenToMd(node, ctx);
       const wrap = INLINE[tag2];
@@ -355,14 +412,26 @@
       }
       case "img": {
         const src = node.getAttribute("src") || "";
-        const alt = node.getAttribute("alt") || "";
+        const alt = (node.getAttribute("alt") || "").trim();
         if (!src) return "";
         if (isFaviconIcon(src)) return "";
-        return `![${alt}](${src})`;
+        if (isNoiseImage(node)) return "";
+        if (typeof ctx.imgSeq !== "number") ctx.imgSeq = 0;
+        ctx.imgSeq += 1;
+        const shortAlt = cleanImageAlt(alt);
+        const label = shortAlt ? `\u56FE\u7247 ${ctx.imgSeq}\uFF1A${shortAlt}` : `\u56FE\u7247 ${ctx.imgSeq}`;
+        return `\u{1F5BC}\uFE0F [${label}]
+
+`;
       }
       case "blockquote": {
         const inner = childrenToMd(node, ctx).trim();
         if (!inner) return "";
+        if (isImageCaptionBlock(node)) {
+          return `${inner}
+
+`;
+        }
         const quoted = inner.split("\n").map((l) => l ? `> ${l}` : ">").join("\n");
         return `${quoted}
 
@@ -383,6 +452,25 @@
         }
         return "```" + lang + "\n" + raw + "\n```\n\n";
       }
+      case "code-block": {
+        const pre = node.querySelector("pre");
+        const codeEl = node.querySelector("code");
+        const source = codeEl || pre || node;
+        const raw = source.textContent.replace(/\n$/, "");
+        let lang = "";
+        if (codeEl) {
+          const m = (codeEl.className || "").match(/language-([\w-]+)/);
+          if (m) lang = m[1];
+        }
+        if (!lang) {
+          const header = node.querySelector(".code-block-decoration, .header-formatted");
+          if (header) {
+            const label = (header.querySelector("span")?.textContent || "").trim();
+            if (label && !/[\s<>]/.test(label)) lang = label;
+          }
+        }
+        return "```" + lang + "\n" + raw + "\n```\n\n";
+      }
       case "table":
         return tableToMd(node, ctx);
       case "div":
@@ -394,6 +482,10 @@
       case "aside":
       case "figure":
         return childrenToMd(node, ctx);
+      case "button": {
+        const hasContent = node.querySelector("img, p, div, pre, code-block, table, ul, ol, blockquote, figure");
+        return hasContent ? childrenToMd(node, ctx) : "";
+      }
       case "span":
       case "u":
       case "sup":
@@ -469,14 +561,19 @@
     ];
     return lines.join("\n") + "\n\n";
   }
-  function htmlToMd(input) {
+  function htmlToMd(input, ctx) {
     if (input == null) return "";
     if (typeof input === "string") {
       if (input.trim() === "") return "";
       input = parseHTMLToFragment(input);
     }
-    const raw = childrenToMd(input, {});
-    return raw.replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "");
+    const raw = childrenToMd(input, ctx || {});
+    const deIndented = raw.replace(/^[ \t]+(\S.*?)?[ \t]*$/gm, (line, content) => {
+      if (!content) return "";
+      if (/^([ ]{2})+([-*+] |\d+\. )/.test(line)) return line;
+      return content;
+    });
+    return deIndented.replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "");
   }
 
   // node_modules/marked/lib/marked.esm.js
@@ -2655,8 +2752,9 @@ ${bodyHtml}`;
   }
   function renderMessagesHtml(messages) {
     const DIVIDER = '<hr style="border:none;border-top:2px solid #d1d5db;margin:16px 0">';
+    const ctx = {};
     const parts = messages.map((m) => {
-      const md = htmlToMd(m.el);
+      const md = htmlToMd(m.el, ctx);
       const bodyHtml = mdToOneNoteHtml(md);
       return frameMessageHtml(m.role, bodyHtml);
     });

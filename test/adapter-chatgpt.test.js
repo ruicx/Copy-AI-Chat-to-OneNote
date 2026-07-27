@@ -64,6 +64,8 @@ test('end-to-end: assistant turn converts to clean markdown', () => {
   assert.match(md, /squares = \[x\*x for x in range\(10\)\]/);
   assert.match(md, /\| 写法 \| 行数 \| 可读性 \|/);
   assert.match(md, /- 适合简单变换/);
+  // <blockquote>简单即美。</blockquote> is a REAL quote (not a Gemini image
+  // caption), so it keeps its Markdown "> " form and stays as a quote block.
   assert.match(md, /> 简单即美。/);
   assert.match(md, /\[官方文档\]\(https:\/\/docs\.python\.org/);
 });

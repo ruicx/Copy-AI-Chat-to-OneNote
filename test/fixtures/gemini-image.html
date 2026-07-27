@@ -1,0 +1,30 @@
+<!--
+  Minimal but faithful slice of Gemini's real DOM for an AI-generated image
+  in an assistant response. Captured from a saved Gemini page.
+  Key structures that must survive conversion:
+    - Content <img> is wrapped in <button class="image-button"> (Gemini uses
+      a button so clicking opens the lightbox). Before the fix, <button> was
+      in DROP_TAGS so the whole image subtree was discarded.
+    - Image src is a large base64 data: URL (OneNote honours these on paste).
+    - alt="，AI 生成" should carry through.
+  Surrounding UI noise images that must NOT survive:
+    - avatar ("个人资料图片"), decorative sparkle, empty data:, placeholders.
+-->
+<model-response>
+  <message-content>
+    <div class="model-response-text">
+      <div class="markdown markdown-main-panel">
+        <p>这是回答里的一张图片：</p>
+        <div class="image-container">
+          <div class="overlay-container">
+            <button class="image-button">
+              <img loading="lazy" class="image animate loaded" alt="一张流程图，展示从 DOM 到 OneNote 的转换流程，AI 生成"
+                   src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==">
+            </button>
+          </div>
+        </div>
+        <p>图片之后的正文。</p>
+      </div>
+    </div>
+  </message-content>
+</model-response>

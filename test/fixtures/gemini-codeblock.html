@@ -1,0 +1,48 @@
+<!--
+  Minimal but faithful slice of Gemini's real DOM for a code block.
+  Captured from a saved Gemini page (single message containing one
+  <code-block>). Kept small so tests stay readable; preserves the exact
+  structures that broke conversion before:
+    - <code-block> custom element (NOT <pre>)
+    - language label in a bare <span> inside .code-block-decoration
+    - download + copy <gem-icon-button>s with leaked aria-label text
+    - syntax-highlight <span class="hljs-*"> inside <code>
+  Stripped: Angular attribute noise (_ngcontent / _nghost / jslog / ids)
+  that carries no conversion-relevant meaning.
+-->
+<model-response>
+  <message-content>
+    <div class="model-response-text">
+      <div class="markdown markdown-main-panel">
+        <p>这是一个 JavaScript 代码块：</p>
+        <code-block class="enable-luminous-code-block gv-code-block-collapsible">
+          <div class="code-block">
+            <div class="formatted-code-block-internal-container">
+              <div class="animated-opacity">
+                <div class="code-block-decoration header-formatted gds-emphasized-body-m">
+                  <span>JavaScript</span>
+                  <div class="buttons">
+                    <gem-icon-button fonticonname="arrow_circle_down" arialabel="下载代码" class="download-button">
+                      <button aria-label="下载代码">
+                        <mat-icon fonticon="arrow_circle_down"></mat-icon>
+                      </button>
+                    </gem-icon-button>
+                    <gem-icon-button fonticonname="copy" arialabel="复制代码" class="copy-button">
+                      <button aria-label="复制代码">
+                        <mat-icon fonticon="copy"></mat-icon>
+                      </button>
+                    </gem-icon-button>
+                  </div>
+                </div>
+                <pre><code class="code-container formatted" data-test-id="code-content"><span class="hljs-comment">// clean code</span>
+<span class="hljs-keyword">const</span> x = <span class="hljs-number">1</span>;
+<span class="hljs-built_in">console</span>.log(x);</code></pre>
+              </div>
+            </div>
+          </div>
+        </code-block>
+        <p>代码块之后的内容，必须出现在代码块之外。</p>
+      </div>
+    </div>
+  </message-content>
+</model-response>
