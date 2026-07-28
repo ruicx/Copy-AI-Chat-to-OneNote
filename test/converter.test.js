@@ -191,6 +191,37 @@ test('Gemini <code-block> from saved-page fixture (regression)', () => {
   assert.doesNotMatch(md, /下载代码|复制代码/);
 });
 
+test('code-block indentation is preserved (Gemini and <pre> paths)', () => {
+  // The leading-whitespace cleanup pass in htmlToMd strips pretty-print
+  // indentation leaked by Gemini's nested <div> wrappers. It must NOT touch
+  // lines INSIDE a fenced code block — real source-code indentation has to
+  // survive, or pasted code collapses to column 0 in OneNote. Cover both the
+  // Gemini <code-block> custom element and the generic <pre><code> path.
+  const indentedBody =
+    'function foo() {\n' +
+    '  if (true) {\n' +
+    '    return 1;\n' +
+    '  }\n' +
+    '}';
+
+  // Gemini <code-block> custom element.
+  const geminiMd = htmlToMd(`
+    <code-block>
+      <div class="code-block">
+        <div class="code-block-decoration header-formatted"><span>JavaScript</span></div>
+        <pre><code class="code-container formatted" data-test-id="code-content">${indentedBody}</code></pre>
+      </div>
+    </code-block>
+  `);
+  assert.ok(geminiMd.includes('  if (true) {'), 'gemini 2-space indent kept: ' + geminiMd);
+  assert.ok(geminiMd.includes('    return 1;'), 'gemini 4-space indent kept: ' + geminiMd);
+
+  // Generic <pre><code> path (ChatGPT / Claude / others).
+  const preMd = htmlToMd(
+    `<pre><code class="language-python">def f():\n    return 1</code></pre>`);
+  assert.ok(preMd.includes('    return 1'), '<pre> 4-space indent kept: ' + preMd);
+});
+
 test('gfm table', () => {
   eq(
     htmlToMd(
@@ -484,4 +515,6 @@ test('complex realistic message', () => {
   assert.ok(md.includes('`code`'), md);
   assert.ok(md.includes('```python'), md);
   assert.ok(md.includes('def f():'), md);
+  // Indented body line must keep its 4-space indent (the code-block bug).
+  assert.ok(md.includes('    return 1'), 'code indent preserved: ' + md);
 });

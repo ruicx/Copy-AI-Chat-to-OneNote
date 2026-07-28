@@ -767,11 +767,36 @@
       input = parseHTMLToFragment(input);
     }
     const raw = childrenToMd(input, ctx || {});
-    const deIndented = raw.replace(/^[ \t]+(\S.*?)?[ \t]*$/gm, (line, content) => {
-      if (!content) return "";
-      if (/^([ ]{2})+([-*+] |\d+\. )/.test(line)) return line;
-      return content;
-    });
+    const lines = raw.split("\n");
+    let inFence = false;
+    const out = [];
+    for (const line of lines) {
+      if (inFence) {
+        if (/^```/.test(line)) inFence = false;
+        out.push(line);
+        continue;
+      }
+      if (/^[ \t]*```/.test(line)) {
+        inFence = true;
+        out.push(line.replace(/^[ \t]+/, ""));
+        continue;
+      }
+      const m = line.match(/^[ \t]+(\S.*?)?[ \t]*$/);
+      if (!m) {
+        out.push(line);
+        continue;
+      }
+      if (!m[1]) {
+        out.push("");
+        continue;
+      }
+      if (/^([ ]{2})+([-*+] |\d+\. )/.test(line)) {
+        out.push(line);
+        continue;
+      }
+      out.push(m[1]);
+    }
+    const deIndented = out.join("\n");
     return deIndented.replace(/\n{3,}/g, "\n\n").replace(/^\s+|\s+$/g, "");
   }
 
@@ -2870,7 +2895,7 @@ ${text}</tr>
         code({ text, lang }) {
           const language = (lang || "").trim();
           const label = language ? `<div style="font-family:${CODE_FONT};font-size:10pt;color:#6a737d;padding:2px 8px 0 8px">${escapeHtml(language)}</div>` : "";
-          const body = `<pre style="margin:0;padding:8px;white-space:pre-wrap;word-break:break-word;font-family:${CODE_FONT};font-size:10pt">${escapeHtml(text)}</pre>`;
+          const body = `<pre style="margin:0;padding:8px;white-space:pre-wrap;word-break:break-word;font-family:${CODE_FONT};font-size:10pt">${codeBodyToHtml(text)}</pre>`;
           return `<div style="background-color:${CODE_BG};border:1px solid #e1e4e8;border-radius:4px;margin:8px 0;overflow-x:auto">${label}${body}</div>`;
         }
       }
@@ -2880,6 +2905,9 @@ ${text}</tr>
   var _marked = buildMarked();
   function escapeHtml(s) {
     return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function codeBodyToHtml(text) {
+    return escapeHtml(text).replace(/^.*$/gm, (line) => line.replace(/^( +)/, (lead) => "&nbsp;".repeat(lead.length)));
   }
   function postProcess(html2) {
     return html2.replace(/<table(?![^>]*\sborder=)/g, '<table border="1"');

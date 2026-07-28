@@ -466,13 +466,48 @@ export function htmlToMd(input, ctx) {
   // deep), so we clean them together: strip leading whitespace from content
   // lines EXCEPT genuine list-item indentation (2-space steps + list marker),
   // and blank out whitespace-only lines.
-  const deIndented = raw.replace(/^[ \t]+(\S.*?)?[ \t]*$/gm, (line, content) => {
-    // Whitespace-only line → empty line.
-    if (!content) return '';
-    // Keep valid list indentation: 2/4/6… spaces + marker.
-    if (/^([ ]{2})+([-*+] |\d+\. )/.test(line)) return line;
-    return content;
-  });
+  //
+  // CRITICAL: this pass must NOT touch lines INSIDE a fenced code block
+  // (```...```) — those leading spaces are real source-code indentation that
+  // must survive into OneNote. We walk line-by-line tracking fence state.
+  const lines = raw.split('\n');
+  let inFence = false;
+  const out = [];
+  for (const line of lines) {
+    if (inFence) {
+      // Inside a fenced code block: only a column-0 ``` closes it. Every
+      // other line — indented, blank, or even a stray indented ``` — is
+      // source content and must be preserved verbatim.
+      if (/^```/.test(line)) inFence = false;
+      out.push(line);
+      continue;
+    }
+    // Outside any code block. The converter emits fence markers at column 0,
+    // but whitespace text nodes between block elements can leak leading spaces
+    // onto an OPENING fence line (e.g. "    ```JavaScript"). Recognize such
+    // lines and normalize them back to column 0.
+    if (/^[ \t]*```/.test(line)) {
+      inFence = true;
+      out.push(line.replace(/^[ \t]+/, ''));
+      continue;
+    }
+    // Outside code blocks: apply the original de-indent rules.
+    const m = line.match(/^[ \t]+(\S.*?)?[ \t]*$/);
+    if (!m) {              // no leading whitespace → leave as-is
+      out.push(line);
+      continue;
+    }
+    if (!m[1]) {           // whitespace-only line → blank it
+      out.push('');
+      continue;
+    }
+    if (/^([ ]{2})+([-*+] |\d+\. )/.test(line)) {  // genuine list indent → keep
+      out.push(line);
+      continue;
+    }
+    out.push(m[1]);        // strip pretty-print leading whitespace
+  }
+  const deIndented = out.join('\n');
   // Collapse 3+ newlines to exactly 2, and trim the whole thing.
   return deIndented.replace(/\n{3,}/g, '\n\n').replace(/^\s+|\s+$/g, '');
 }

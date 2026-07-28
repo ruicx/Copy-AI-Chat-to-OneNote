@@ -46,7 +46,7 @@ function buildMarked() {
         const label = language
           ? `<div style="font-family:${CODE_FONT};font-size:10pt;color:#6a737d;padding:2px 8px 0 8px">${escapeHtml(language)}</div>`
           : '';
-        const body = `<pre style="margin:0;padding:8px;white-space:pre-wrap;word-break:break-word;font-family:${CODE_FONT};font-size:10pt">${escapeHtml(text)}</pre>`;
+        const body = `<pre style="margin:0;padding:8px;white-space:pre-wrap;word-break:break-word;font-family:${CODE_FONT};font-size:10pt">${codeBodyToHtml(text)}</pre>`;
         return `<div style="background-color:${CODE_BG};border:1px solid #e1e4e8;border-radius:4px;margin:8px 0;overflow-x:auto">${label}${body}</div>`;
       },
     },
@@ -63,6 +63,25 @@ function escapeHtml(s) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+/**
+ * Turn raw code-block text into HTML that survives OneNote paste.
+ *
+ * OneNote's clipboard paste path drops <pre> semantics AND ignores the
+ * `white-space` CSS property (it's not in the supported-styles list, see
+ * https://learn.microsoft.com/en-us/graph/onenote-input-output-html), so a
+ * `    return 1` line pastes as `return 1` — code indentation collapses.
+ *
+ * The fix: escape special chars first, then encode each line's LEADING run
+ * of spaces as &nbsp; (which OneNote keeps verbatim). We only encode leading
+ * spaces — intra-line alignment is rare in source and &nbsp; there would
+ * block word-wrap. Tabs in source are left as-is; real-world indented code
+ * from these AI sites uses spaces.
+ */
+function codeBodyToHtml(text) {
+  return escapeHtml(text).replace(/^.*$/gm, (line) =>
+    line.replace(/^( +)/, (lead) => '&nbsp;'.repeat(lead.length)));
 }
 
 /**

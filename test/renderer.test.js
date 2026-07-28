@@ -112,3 +112,19 @@ test('html entities in code are escaped', () => {
   assert.ok(!/<a>b/i.test(h.replace(/<div[^>]*code[^>]*>/, '')) || h.includes('&lt;a&gt;'), h);
   assert.match(h, /&lt;a&gt;/);
 });
+
+test('code-block leading spaces are encoded as &nbsp; (OneNote drops <pre>)', () => {
+  // OneNote's paste path ignores `white-space` CSS and drops <pre> semantics,
+  // so leading spaces would collapse to nothing on paste. The renderer must
+  // encode each line's leading spaces as &nbsp; (which OneNote keeps verbatim)
+  // so code indentation survives.
+  const h = mdToOneNoteHtml('```python\ndef f():\n    return 1\n```');
+  const preBody = h.match(/<pre[^>]*>([\s\S]*?)<\/pre>/)[1];
+  // 4-space indent on the body line survives as 4 non-breaking spaces.
+  assert.ok(preBody.includes('&nbsp;&nbsp;&nbsp;&nbsp;return 1'),
+    '4-space indent encoded as &nbsp;: ' + preBody);
+  // The 0-indent line is NOT prefixed with &nbsp;.
+  assert.match(preBody, /(^|\n)def f\(\):/);
+  // Still keeps escaping for any code special chars.
+  assert.match(preBody, /return 1/);
+});
