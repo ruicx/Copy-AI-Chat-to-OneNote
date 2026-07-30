@@ -4,15 +4,24 @@
  * Stage 2 of the pipeline. Takes clean Markdown (from converter.js) and emits
  * HTML aligned with what OneNote reliably preserves on paste:
  *   - code blocks become <div> with bg/monospace (OneNote drops <pre> semantics)
- *   - code blocks get syntax highlighting via highlight.js; because OneNote
- *     keeps neither class names nor <style> blocks, token classes are rewritten
+ *     and get syntax highlighting via highlight.js; because OneNote keeps
+ *     neither class names nor <style> blocks, token classes are rewritten
  *     to inline style="color:..." against a bundled light palette.
+ *   - math formulas ($...$ / $$...$$) become Presentation MathML via Temml.
+ *     OneNote's HTML paste path extracts `<math>...</math>` blocks and converts
+ *     them to NATIVE Office Math (OMML) equations (see
+ *     https://learn.microsoft.com/en-us/office/math/mathml). This is why we emit
+ *     MathML rather than KaTeX's HTML+CSS render: OneNote keeps the `<math>`
+ *     markup but drops classes/`<style>`, so a CSS-rendered formula would
+ *     collapse to plain text (the same constraint that drives the inline-color
+ *     code-highlight trick above).
  *   - tables carry a border="1" attribute (style border is ignored)
  *   - headings get OneNote's signature dark-blue color
  *
  * Reference: https://learn.microsoft.com/en-us/graph/onenote-input-output-html
  */
 import { Marked } from 'marked';
+import temml from 'temml';
 import hljs from 'highlight.js/lib/core';
 import javascript from 'highlight.js/lib/languages/javascript';
 import typescript from 'highlight.js/lib/languages/typescript';
@@ -100,6 +109,45 @@ function buildMarked() {
         return `<div style="background-color:${CODE_BG};border:1px solid #e1e4e8;border-radius:4px;margin:8px 0;overflow-x:auto">${label}${body}</div>`;
       },
     },
+    // Math support. The converter emits `$...$` (inline) and `$$...$$` (block).
+    // We register these as marked extensions so they are tokenised by marked
+    // itself — which means a `$` INSIDE a fenced code block is never mistaken
+    // for math (marked has already classified that text as a code token before
+    // the inline tokenizer runs). Each token is rendered to Presentation MathML
+    // via Temml; OneNote converts embedded `<math>` to native equations on paste.
+    extensions: [
+      {
+        name: 'blockMath',
+        level: 'block',
+        start(src) { return src.indexOf('$$'); },
+        tokenizer(src) {
+          // A column-0 `$$...$$` block. `[\s\S]+?` allows multi-line display
+          // equations; the non-greedy match stops at the first closing `$$`.
+          const m = /^\$\$([\s\S]+?)\$\$(?:\n|$)/.exec(src);
+          if (m) {
+            const tex = m[1];
+            return { type: 'blockMath', raw: '$$' + tex + '$$', tex };
+          }
+        },
+        renderer({ tex }) { return renderMath(tex, true); },
+      },
+      {
+        name: 'inlineMath',
+        level: 'inline',
+        start(src) { return src.indexOf('$'); },
+        tokenizer(src) {
+          // `$...$` on a single line. A literal `\$` inside is allowed via the
+          // `\\\$` alternation; newlines and bare `$` never appear in the
+          // content. The non-empty check rejects a stray `$$`.
+          const m = /^\$((?:\\\$|[^\$\n])+?)\$/.exec(src);
+          if (m && m[1].trim()) {
+            const tex = m[1];
+            return { type: 'inlineMath', raw: '$' + tex + '$', tex };
+          }
+        },
+        renderer({ tex }) { return renderMath(tex, false); },
+      },
+    ],
   });
 
   return marked;
@@ -113,6 +161,38 @@ function escapeHtml(s) {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+}
+
+/**
+ * Render a LaTeX fragment to Presentation MathML for embedding in the OneNote
+ * HTML payload.
+ *
+ * OneNote's clipboard paste path does NOT understand KaTeX's HTML+CSS render
+ * (it drops class names and <style> blocks — the same constraint that forces
+ * us to inline colors for code highlighting). But its HTML parser DOES extract
+ * `<math>...</math>` blocks and hand them to its MathML importer, which
+ * converts them into native Office Math (OMML) equations (see
+ * https://learn.microsoft.com/en-us/office/math/mathml). Temml produces exactly
+ * that — Presentation MathML wrapped in a bare `<math>` element, no KaTeX-style
+ * span wrapper. We embed it verbatim.
+ *
+ * `throwOnError:false` makes Temml emit a literal fallback (it never throws for
+ * bad LaTeX); the surrounding try/catch is belt-and-braces against a Temml bug
+ * and degrades to escaped text so a single malformed formula can never abort
+ * the whole copy.
+ */
+function renderMath(tex, displayMode) {
+  try {
+    const mathml = temml.renderToString(tex, { displayMode, throwOnError: false });
+    // Temml sometimes emits an <annotation> with the original TeX source.
+    // OneNote ignores annotation children anyway, so drop it to keep the
+    // payload small. (If absent this replace is a no-op.)
+    return mathml.replace(/<annotation[\s\S]*?<\/annotation>/g, '') + '\n';
+  } catch (_) {
+    // Last-resort fallback: show the raw LaTeX as inline code so the user at
+    // least sees what the formula was, instead of nothing.
+    return '<code>' + escapeHtml(tex) + '</code>';
+  }
 }
 
 // highlight.js token scope → inline color. Values are the GitHub light theme,

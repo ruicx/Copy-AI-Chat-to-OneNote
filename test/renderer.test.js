@@ -196,3 +196,42 @@ test('custom code font from localStorage leads the font-family stack', () => {
     else globalThis.localStorage = origLS;
   }
 });
+
+test('block math ($$...$$) renders to Presentation MathML', () => {
+  // OneNote converts embedded <math>...</math> blocks to native equations on
+  // paste (see Microsoft's MathML support doc). The renderer must emit a real
+  // <math> element — NOT KaTeX's HTML+CSS render, which OneNote would collapse
+  // to plain text (it drops classes and <style>).
+  const h = mdToOneNoteHtml('$$\\frac{n(n+1)}{2}$$');
+  assert.match(h, /<math[^>]*>/, 'emits a <math> element: ' + h);
+  assert.match(h, /<mfrac>/, 'contains a fraction element: ' + h);
+  // Block math should carry display="block" (display-mode equation).
+  assert.match(h, /display="block"/, 'block math is display-mode: ' + h);
+});
+
+test('inline math ($...$) renders to inline MathML', () => {
+  const h = mdToOneNoteHtml('energy is $E = mc^2$ today');
+  assert.match(h, /<math[^>]*>/, 'emits a <math> element: ' + h);
+  assert.match(h, /msup/, 'contains a superscript (the ^2): ' + h);
+  // Inline math must NOT be display-mode.
+  assert.doesNotMatch(h, /display="block"/, 'inline math is not display-mode: ' + h);
+  // Surrounding text survives on the same line (stays inside the paragraph).
+  assert.match(h, /energy is/);
+  assert.match(h, /today/);
+});
+
+test('$ inside a fenced code block is NOT converted to math', () => {
+  // A `$` that is literal code must survive untouched. Because math is
+  // registered as a marked extension, marked tokenises the code fence first and
+  // the inline tokenizer never sees its contents — so this should "just work".
+  const h = mdToOneNoteHtml('```js\nconst price = "$5";\n```');
+  assert.doesNotMatch(h, /<math/, 'no math element for code-fence $: ' + h);
+  assert.match(h, /\$5/, 'the literal $5 survives in the code body');
+});
+
+test('bare currency $5 in text is not turned into math', () => {
+  // A lone `$` with no closing `$` must not open a math span.
+  const h = mdToOneNoteHtml('costs $5 today');
+  assert.doesNotMatch(h, /<math/, 'no math element for bare $5: ' + h);
+  assert.match(h, /\$5/);
+});

@@ -1,0 +1,27 @@
+<!--
+  Minimal but faithful slice of Gemini's real DOM for math formulas.
+  Captured/condensed from a saved Gemini page (single model-response message
+  containing one inline formula and one block formula). Kept small so tests
+  stay readable; preserves the exact structures that the converter must handle:
+    - <span class="math-inline" data-math="..."> wrapping a .katex render tree
+    - <div class="math-block" data-math="..."> wrapping a .katex-display tree
+    - the raw LaTeX source lives in the `data-math` attribute
+    - the inner .katex / .katex-html subtree is a classes+inline-styles render
+      (KaTeX web fonts) that MUST be dropped — flattening it mashes the glyphs
+      into meaningless text.
+  Stripped: Angular attribute noise (_ngcontent / _nghost / jslog / ids),
+  long KaTeX span trees trimmed to a representative slice (the real subtree is
+  hundreds of nested spans carrying no additional conversion-relevant meaning).
+-->
+<model-response>
+  <message-content>
+    <div class="model-response-text">
+      <div class="markdown markdown-main-panel">
+        <p>这是行内公式：<span class="math-inline" data-math="E = mc^2" data-index-in-node="23"><span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.6833em"></span><span class="mord mathnormal" style="margin-right:0.0576em">E</span><span class="mrel">=</span><span class="mord mathnormal">m</span><span class="mord"><span class="mord mathnormal">c</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist"><span style="top:-2.5em">2</span></span></span></span></span></span></span></span></span>，非常有名。</p>
+        <p>另一个行内公式：<span class="math-inline" data-math="\sum_{i=1}^{n} i = \frac{n(n+1)}{2}"><span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="mop">∑</span><span class="msupsub">n</span></span></span></span>。</p>
+        <div class="math-block" data-math="\oint_C \mathbf{F} \cdot d\mathbf{r} = \iint_S (\nabla \times \mathbf{F}) \cdot d\mathbf{S}"><span class="katex-display"><span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:2.2719em"></span><span class="mop"><span class="mop op-symbol large-op" style="margin-right:0.4445em">∮</span><span class="msupsub">C</span></span><span class="mord mathbf">F</span></span></span></span></span></div>
+        <p>块级公式之后的内容。</p>
+      </div>
+    </div>
+  </message-content>
+</model-response>

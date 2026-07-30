@@ -15,8 +15,8 @@ import { writeFileSync } from 'node:fs';
 const USERSCRIPT_HEADER = `// ==UserScript==
 // @name         AI 对话一键复制到 OneNote
 // @namespace    https://github.com/ruicx/Copy-AI-Chat-to-OneNote
-// @version      0.2.0
-// @description  复制 AI 对话（ChatGPT/Gemini/Claude/DeepSeek/Kimi/豆包）到剪贴板，粘贴 OneNote 时保留标题层级/表格/列表/代码块等格式
+// @version      0.3.0
+// @description  复制 AI 对话（ChatGPT/Gemini/Claude/DeepSeek/Kimi/豆包）到剪贴板，粘贴 OneNote 时保留标题层级/表格/列表/代码块/数学公式等格式
 // @author       xie-rc
 // @match        https://gemini.google.com/*
 // @match        https://chatgpt.com/*

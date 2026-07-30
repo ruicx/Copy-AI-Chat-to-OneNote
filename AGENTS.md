@@ -9,8 +9,9 @@ must not be broken, and the workflow that keeps the build green.
 A Tampermonkey userscript (`ai-chat-copy.user.js`) that copies AI chat
 conversations (ChatGPT / Gemini / Claude / DeepSeek / Kimi / 豆包) to the
 clipboard so that pasting into **OneNote** (UWP / desktop 2016 / web)
-preserves formatting — heading hierarchy, tables, code blocks, lists,
-bold/italic — instead of collapsing to plain text.
+preserves formatting — heading hierarchy, tables, code blocks, **math
+equations (native OneNote equations)**, lists, bold/italic — instead of
+collapsing to plain text.
 
 The shipped artifact is a single self-contained `.user.js`. Source lives in
 `src/` and is bundled with esbuild (`build.mjs`).
@@ -36,7 +37,7 @@ across platforms. Do not "optimise" by short-circuiting this pipeline.
 | `ai-chat-copy.user.js` | **Build output.** The shipped userscript. Do not hand-edit — regenerate with `npm run build`. |
 | `src/index.js` | Userscript entry: pick adapter by host, install Trusted Types default policy, mount UI. |
 | `src/converter.js` | **Stage 1.** `htmlToMd(input, ctx)` — recursive DOM→Markdown. The core file; most format logic lives here. |
-| `src/renderer.js` | **Stage 2.** `mdToOneNoteHtml(md)` — Marked + post-processing into OneNote-friendly HTML (styled `<div>` for code, `border="1"` on tables, OneNote heading style). Also registers highlight.js languages and renders syntax-highlighted code blocks with inline colors (see invariant #5). |
+| `src/renderer.js` | **Stage 2.** `mdToOneNoteHtml(md)` — Marked + post-processing into OneNote-friendly HTML (styled `<div>` for code, `border="1"` on tables, OneNote heading style). Also registers highlight.js languages and renders syntax-highlighted code blocks with inline colors (see invariant #5), and renders math (`$…$`/`$$…$$`) to Presentation MathML via Temml (see invariant #10). |
 | `src/pipeline.js` | Orchestration: `renderMessage`, `renderConversation`, `renderTurn`, `findTurnIndex`. Adds role badges + dividers at the HTML layer. |
 | `src/clipboard.js` | **Stage 3.** `copyForOneNote(html, text)` — `ClipboardItem` write with `execCommand` fallback. |
 | `src/i18n.js` | Bilingual string table (zh/en) + `t(key, vars)`. Locale detected once from `navigator.language` (`zh*` → zh, else en). |
@@ -141,6 +142,28 @@ follows the FAB on drag without separate position-sync). Clicking it opens a
    numbered via a shared `ctx.imgSeq` across the whole conversation. Real quotes must stay as
    `> ` blocks — `isImageCaptionBlock()` discriminates Gemini image-caption
    blockquotes from real quotations; don't flatten all blockquotes.
+10. **Math = embedded Presentation MathML, not KaTeX's HTML+CSS render.** This
+    is the same constraint that drives inline-coloured code highlighting
+    (invariant #5): OneNote's paste path **drops class names and `<style>`
+    blocks**, so KaTeX's `.katex`/`.katex-html` render tree (classes + inline
+    styles + KaTeX web fonts) would collapse to meaningless plain text on paste.
+    But OneNote's HTML parser **extracts `<math>...</math>` blocks and hands
+    them to its MathML importer**, which converts them to **native Office Math
+    (OMML) equations** (see the [MathML support doc](https://learn.microsoft.com/en-us/office/math/mathml);
+    it accepts Presentation MathML). So:
+    - **Converter** reads the raw LaTeX from the source and emits `$…$` (inline)
+      / `$$…$$` (block). For Gemini that source is the `data-math` attribute on
+      `<span class="math-inline">` / `<div class="math-block">` — **not** the
+      rendered `.katex` tree. The `.katex` subtree is dropped entirely.
+    - **Renderer** registers `$`/`$$` as `marked` extensions and renders them
+      with Temml (`temml.renderToString(tex, {displayMode, throwOnError:false})`),
+      which outputs a bare `<math>…</math>` (no KaTeX-style span wrapper).
+      `throwOnError:false` means bad LaTeX degrades to a literal fallback, never
+      an exception that would abort the whole copy.
+    - Because math is a marked extension, a `$` **inside a fenced code block**
+      is never mistaken for math (marked tokenises the fence first).
+    Do not "optimise" by switching to KaTeX HTML rendering or by reading the
+    visible `.katex` text — both break the paste.
 
 ## Gemini-specific notes (the fiddly platform)
 
@@ -154,6 +177,13 @@ most fragile part of the codebase. Key things:
   converter has a dedicated `case 'code-block'` — if you delete it, code blocks
   corrupt (the language label fuses with the opening fence and swallows the
   rest of the message).
+- Math renders in `<span class="math-inline">` (inline) / `<div class="math-block">`
+  (block), each carrying the raw LaTeX in a `data-math` attribute and wrapping a
+  `.katex` / `.katex-display` HTML+CSS render subtree. The converter detects
+  these **by class** in `mathDataAttribute()` (intercepted before the
+  `span`/`div` cases, since they're ordinary span/div — a `case 'math-inline'`
+  in the switch would never fire) and reads `data-math`; the `.katex` subtree is
+  dropped. See invariant #10.
 - Images are wrapped in `<button class="image-button">`. `<button>` is
   intentionally **not** in `DROP_TAGS`; the converter flattens it only when it
   contains content, and drops it otherwise.
@@ -207,6 +237,6 @@ recalibrating a platform, save a fixture and add an adapter test.
 ## Commit / PR conventions
 
 - Build before committing if `src/` changed: `npm run build`, then commit both.
-- Run `npm test` before pushing — 82 tests should all pass.
+- Run `npm test` before pushing — 105 tests should all pass.
 - Keep the userscript header version in `build.mjs` in sync with
   `package.json` if you bump versions.

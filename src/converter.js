@@ -63,6 +63,36 @@ function isVisuallyHidden(node) {
   return !!cls && VISUALLY_HIDDEN_CLASS.test(cls);
 }
 
+// --- Gemini math elements -------------------------------------------------
+// Gemini renders each formula as an ordinary <span>/<div> carrying a
+// `math-inline` / `math-block` CLASS plus a `data-math` attribute with the raw
+// LaTeX source, wrapping a KaTeX HTML+CSS render subtree (.katex / .katex-html
+// / .katex-display). Because these are span/div elements (NOT custom tag
+// names), they would otherwise hit the `span`/`div` cases and be flattened —
+// mashing the rendered glyphs into meaningless text. We detect them by class
+// upstream and read the LaTeX from `data-math`; the rendered .katex subtree is
+// dropped. See nodeToMd() for the intercept.
+const MATH_INLINE_CLASS = /(^|\s)math-inline(\s|$)/;
+const MATH_BLOCK_CLASS = /(^|\s)math-block(\s|$)/;
+
+/** If `node` is a Gemini math element with a usable `data-math`, return the
+ *  trimmed LaTeX; otherwise return '' (so the caller falls back to flattening
+ *  the visible .katex content instead of silently discarding it). */
+function mathDataAttribute(node) {
+  if (!node.getAttribute) return '';
+  const cls = node.getAttribute('class') || '';
+  if (!MATH_INLINE_CLASS.test(cls) && !MATH_BLOCK_CLASS.test(cls)) return '';
+  return (node.getAttribute('data-math') || '').trim();
+}
+
+/** 'block' for display math, 'inline' for inline math, '' for non-math. */
+function mathElementKind(node) {
+  const cls = (node.getAttribute && node.getAttribute('class')) || '';
+  if (MATH_BLOCK_CLASS.test(cls)) return 'block';
+  if (MATH_INLINE_CLASS.test(cls)) return 'inline';
+  return '';
+}
+
 /** Is this <blockquote> a Gemini-style image caption (styling, not a real
  *  quotation)? Gemini wraps each AI image's "图像描述：" paragraph in a
  *  <blockquote> purely for visual grouping. We detect two signals:
@@ -197,6 +227,22 @@ function nodeToMd(node, ctx) {
   // Visually-hidden accessibility chrome (screen-reader labels, etc.) —
   // carries no visible content, must not leak into the output.
   if (isVisuallyHidden(node)) return '';
+
+  // Gemini math: a <span class="math-inline"> / <div class="math-block">
+  // wrapping a KaTeX render subtree, with the raw LaTeX in `data-math`.
+  // Detect by CLASS, not tagName — these are ordinary span/div elements, so
+  // the dedicated case below in the switch would never match. Intercept here
+  // (before the INLINE table / switch), read the LaTeX, drop the .katex render.
+  const mathTex = mathDataAttribute(node);
+  if (mathTex) {
+    // Block math (math-block) → own paragraph; inline math → inline span.
+    // mathElementKind returns 'block' / 'inline' / '' (the latter when this
+    // isn't actually a Gemini math element, though mathDataAttribute already
+    // guarantees it is).
+    return mathElementKind(node) === 'block'
+      ? `\n\n$$${mathTex}$$\n\n`
+      : `$${mathTex}$`;
+  }
 
   // Inline elements
   if (tag in INLINE) {
@@ -337,6 +383,13 @@ function nodeToMd(node, ctx) {
       }
       return '```' + lang + '\n' + raw + '\n```\n\n';
     }
+
+    // NOTE: Gemini math (math-inline / math-block) is handled UPSTREAM by the
+    // mathDataAttribute() check before the INLINE table / this switch. Gemini
+    // renders math as ordinary <span>/<div> elements with a CLASS (not a custom
+    // tag name), so they would never reach a dedicated `case` here — they'd
+    // fall into `case 'span'` / `case 'div'` and get flattened. The upstream
+    // intercept is what reads `data-math` and emits `$...$` / `$$...$$`.
 
     case 'table':
       return tableToMd(node, ctx);

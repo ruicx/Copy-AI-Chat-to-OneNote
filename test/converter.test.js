@@ -222,6 +222,65 @@ test('code-block indentation is preserved (Gemini and <pre> paths)', () => {
   assert.ok(preMd.includes('    return 1'), '<pre> 4-space indent kept: ' + preMd);
 });
 
+test('Gemini <math-inline> converts to $...$ and drops the katex render', () => {
+  // Real Gemini DOM: a <span class="math-inline" data-math="..."> wrapping a
+  // .katex render subtree (classes + inline styles + KaTeX glyph text). We must
+  // read `data-math` and emit `$...$`, NOT flatten the .katex tree — flattening
+  // mashes the rendered glyphs into meaningless text ("E = mc 2").
+  const md = htmlToMd(
+    '<span class="math-inline" data-math="E = mc^2">' +
+    '<span class="katex"><span class="katex-html" aria-hidden="true">' +
+    '<span class="base"><span class="mord mathnormal">E</span>' +
+    '<span class="mrel">=</span><span class="mord mathnormal">m</span>' +
+    '<span class="mord"><span class="mord mathnormal">c</span>' +
+    '<span class="msupsub"><span class="vlist-t"><span class="vlist-r">' +
+    '<span class="vlist"><span>2</span></span></span></span></span></span>' +
+    '</span></span></span>');
+  assert.equal(md, '$E = mc^2$');
+  // The flattened katex render text must NOT leak into the output.
+  assert.doesNotMatch(md, /katex/);
+});
+
+test('Gemini <math-block> converts to $$...$$ as its own paragraph', () => {
+  // Real Gemini DOM: a <div class="math-block" data-math="..."> wrapping a
+  // .katex-display render subtree. Emitted as a display equation (own block).
+  // We wrap it in a preceding + trailing paragraph so the block-separation
+  // (blank line before and after the $$...$$) is observable — a standalone
+  // math-block at the very start/end of a message has its surrounding newlines
+  // trimmed by htmlToMd's final trim(), which is expected.
+  const md = htmlToMd(
+    '<p>Before the formula.</p>' +
+    '<div class="math-block" data-math="\\oint_C \\mathbf{F} \\cdot d\\mathbf{r}">' +
+    '<span class="katex-display"><span class="katex"><span class="katex-html">' +
+    '<span class="base"><span class="mop">∮</span><span class="msupsub">C</span></span>' +
+    '</span></span></span></div>' +
+    '<p>After the formula.</p>');
+  assert.match(md, /\$\$\\oint_C \\mathbf\{F\} \\cdot d\\mathbf\{r\}\$\$/);
+  // Blank line before AND after → it's a standalone block, not inline.
+  assert.match(md, /\n\n\$\$/);
+  assert.match(md, /\$\$\n\n/);
+  // The katex render text must not leak.
+  assert.doesNotMatch(md, /katex/);
+});
+
+test('math element without data-math falls back to flattening (no content loss)', () => {
+  // If Gemini ever ships a math element without data-math (malformed DOM, older
+  // version), we must NOT silently discard the visible content. Fall back to the
+  // default flatten behaviour so the rendered text still shows up.
+  const md = htmlToMd(
+    '<span class="math-inline"><span class="katex">x + y</span></span>');
+  assert.equal(md, 'x + y');
+});
+
+test('math-inline / math-block inside a paragraph stay correctly scoped', () => {
+  // Inline math embedded in flowing text must stay inline (no surrounding blank
+  // lines), and a following block math becomes its own paragraph.
+  const md = htmlToMd(
+    '<p>能量公式 <span class="math-inline" data-math="E = mc^2"></span> 很有名。</p>');
+  assert.match(md, /\$E = mc\^2\$/);
+  assert.doesNotMatch(md, /\n\n\$E/, 'inline math must not be split onto its own block');
+});
+
 test('gfm table', () => {
   eq(
     htmlToMd(
