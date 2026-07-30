@@ -48,6 +48,28 @@ AI 平台自带的复制按钮输出的是 Markdown 或夹带框架样式的 HTM
 
 **OneNote 粘贴贴士**：用默认 `Ctrl+V`（「保留源格式」）即可。
 
+### 代码块语法高亮
+
+复制代码块到 OneNote 时会**保留语法颜色**——关键字、字符串、注释、数字等各有配色。这在**所有**支持的平台都生效（颜色由脚本自己用 highlight.js 渲染，不是搬页面上的），覆盖一组常用语言：
+
+`javascript / typescript`（含别名 `js`、`ts`）、`python`（`py`）、`bash`（`sh`、`shell`）、`cpp`（`c`、`c++`）、`java`、`go`、`rust`、`sql`、`json`、`xml`（`html`）、`markdown`、`css`。
+
+**未识别**的语言（或没标语言）按纯等宽文本粘贴——没有颜色，但内容完整不丢。
+
+> 颜色为什么能在 OneNote 里保留：OneNote 认内联 `style="color:…"`，但不认 class 和 `<style>` 块。脚本把每个高亮 token 改写成内联颜色、丢掉 class，配色就跟着代码一起带过去了。
+
+### 自定义代码字体（设置）
+
+想用自己的等宽字体（如 `Maple Mono NF CN`、`JetBrains Mono`、`Cascadia Code`）？设一次即可：
+
+1. **鼠标移到**右下角 📋 浮动按钮上，左边会浮出一个 **⚙ 齿轮**。
+2. **点齿轮**，输入字体名（按你系统里实际装的名字），如 `Maple Mono NF CN`。
+3. 之后复制代码块时优先用你的字体，缺失则回落到 `Consolas → Courier New → monospace`。
+
+清空输入（留空）即恢复默认 Consolas。设置存在 `localStorage`，跨会话保留。
+
+> 字体必须装在**你粘贴进 OneNote 的那台机器**上（OneNote 用本机系统字体渲染，不会去下载字体）。只要那台机器装了，就生效。
+
 ## 支持平台
 
 | 平台 | 状态 | 说明 |
@@ -65,7 +87,7 @@ AI 平台自带的复制按钮输出的是 Markdown 或夹带框架样式的 HTM
 
 ```bash
 npm install          # 装依赖（marked、esbuild、linkedom）
-npm test             # 跑全部自动化测试（82 个）
+npm test             # 跑全部自动化测试（94 个）
 npm run build        # 重新打包 ai-chat-copy.user.js（强制 LF）
 ```
 

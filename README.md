@@ -80,6 +80,44 @@ this, or you can paste the image in afterwards.
 
 **OneNote paste tip:** use the default `Ctrl+V` ("keep source formatting").
 
+### Syntax highlighting in code blocks
+
+Code blocks keep their **syntax colours** when pasted into OneNote — keywords,
+strings, comments, numbers, etc. are each tinted. This works on **every**
+supported platform (the highlighting is rendered by the script itself via
+highlight.js, not borrowed from the page), with a curated set of common
+languages:
+
+`javascript / typescript` (incl. aliases `js`, `ts`), `python` (`py`),
+`bash` (`sh`, `shell`), `cpp` (`c`, `c++`), `java`, `go`, `rust`, `sql`,
+`json`, `xml` (`html`), `markdown`, `css`.
+
+Code in an **unrecognised** language (or no language given) pastes as plain
+monospace text — no colours, but the content is intact.
+
+> Why colours survive OneNote: OneNote keeps inline `style="color:…"` but
+> discards CSS classes and `<style>` blocks. The script rewrites every
+> highlight token to an inline colour and drops the class, so the palette
+> travels with the code.
+
+### Custom code font (settings)
+
+Prefer your own monospace font (e.g. `Maple Mono NF CN`, `JetBrains Mono`,
+`Cascadia Code`)? Set it once:
+
+1. **Hover** the floating 📋 button — a **⚙ gear** appears to its left.
+2. **Click the gear** and type the font name (exactly as installed on your
+   system), e.g. `Maple Mono NF CN`.
+3. From the next copy on, code blocks use your font first, with
+   `Consolas → Courier New → monospace` as the fallback if it's missing.
+
+Clear the input (leave it empty) to reset to the default Consolas. The choice
+is saved in `localStorage` and persists across sessions.
+
+> The font must be installed on the **machine where you paste into OneNote**
+> (OneNote renders with the local system's fonts; it won't download a font).
+> As long as it's installed there, it takes effect.
+
 ## Supported platforms
 
 | Platform | Status | Notes |
@@ -99,7 +137,7 @@ this, or you can paste the image in afterwards.
 
 ```bash
 npm install          # marked, esbuild, linkedom
-npm test             # full automated suite (82 tests)
+npm test             # full automated suite (94 tests)
 npm run build        # regenerate ai-chat-copy.user.js (LF line endings)
 ```
 

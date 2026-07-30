@@ -26,26 +26,45 @@ const STYLES = `
   .fab[disabled] { opacity: .55; cursor: not-allowed; }
   .fab.dragging { transition: none; cursor: grabbing; opacity: .9; }
 
-  /* Settings (gear) button — a child of the FAB, positioned just outside the
-     FAB's left edge. Because it is absolutely positioned within the (fixed)
-     FAB, it automatically follows the FAB when the FAB is dragged — no extra
-     position-sync logic needed. It only appears on FAB hover so it never
-     crowds the page at rest. */
+  /* Settings (gear) button — a child of the FAB. The gear VISUALLY sits to the
+     left of the FAB, but its box OVERLAPS the FAB's left edge. This overlap is
+     deliberate and essential: there must be no dead space between the FAB's
+     hover area and the gear's, otherwise moving the cursor from the FAB toward
+     the gear crosses empty page and the gear vanishes before the click lands.
+     The visible gap on screen comes from transparent padding inside the gear
+     button, which keeps the hover chain unbroken. It follows the FAB on drag
+     automatically (it's an absolute child of the fixed FAB).
+
+     Geometry (FAB is 52px wide): gear box width 44 + right offset 46 places
+     its right edge 6px inside the FAB (so boxes overlap by 6px) while its left
+     edge sticks 38px out past the FAB's left edge — exactly where the round
+     icon (38px, in 6px right padding) visually sits. */
   .fab.settings {
-    position: absolute; top: 7px; right: 100%; margin-right: 6px;
-    width: 38px; height: 38px; border-radius: 50%;
-    background: #2563eb; color: #fff; border: none; cursor: pointer;
-    font-size: 18px; display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 4px 14px rgba(0,0,0,.28); user-select: none;
-    opacity: 0; pointer-events: none;
-    transform: translateX(6px) scale(.9);
-    transition: opacity .12s ease, transform .12s ease, background .12s ease;
+    position: absolute; top: 7px; right: 46px;
+    width: 44px; height: 38px;
+    padding: 0 6px 0 0; /* transparent spacer: keeps visible gap, box overlaps */
+    background: transparent; border: none; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    user-select: none; opacity: 0; pointer-events: none;
+    transform: translateX(6px);
+    transition: opacity .12s ease, transform .12s ease;
   }
-  .fab.settings:hover { background: #1d4ed8; }
+  .fab.settings .gear-icon {
+    width: 38px; height: 38px; border-radius: 50%;
+    background: #2563eb; color: #fff; font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 14px rgba(0,0,0,.28);
+    transition: background .12s ease, transform .12s ease;
+  }
+  .fab.settings:hover .gear-icon,
+  .fab.settings:focus-visible .gear-icon { background: #1d4ed8; }
+  /* Reveal while the FAB OR the gear itself is hovered — the overlapping box
+     guarantees the cursor never leaves hover coverage in between. */
   .fab:hover .fab.settings,
-  .fab.settings:hover {
+  .fab.settings:hover,
+  .fab.settings:focus-within {
     opacity: 1; pointer-events: auto;
-    transform: translateX(0) scale(1);
+    transform: translateX(0);
   }
   .fab.dragging .fab.settings { opacity: 0 !important; pointer-events: none; }
 
@@ -244,12 +263,18 @@ export function mountFloatingButton(adapter) {
   });
 
   // Gear button — child of the FAB so it follows on drag; opens code-font prompt.
+  // The outer button is a transparent hover-bridge (overlaps the FAB edge so the
+  // cursor can travel to it without the gear disappearing); the visible round
+  // icon lives in the inner .gear-icon span.
   const gear = document.createElement('button');
   gear.className = 'fab settings';
   gear.type = 'button';
   gear.title = t('settingsTitle');
   gear.setAttribute('aria-label', t('settingsTitle'));
-  gear.textContent = '⚙';
+  const gearIcon = document.createElement('span');
+  gearIcon.className = 'gear-icon';
+  gearIcon.textContent = '⚙';
+  gear.appendChild(gearIcon);
   gear.addEventListener('click', (e) => {
     // Don't let the click bubble up to the FAB (which would trigger a copy).
     e.preventDefault();
