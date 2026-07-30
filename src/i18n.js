@@ -74,6 +74,19 @@ const STRINGS = {
   // Error thrown when a per-message button can't map its element to a turn.
   errNotFound:      { zh: '未找到该消息',
                       en: 'Message not found' },
+  // Settings (gear) button tooltip.
+  settingsTitle:    { zh: '设置',
+                      en: 'Settings' },
+  // Prompt asking the user for the code-block monospace font.
+  // {default} → the current fallback font name (kept for future use).
+  settingsCodeFontPrompt: { zh: '请输入代码块等宽字体名（留空恢复默认 Consolas）：',
+                            en: 'Enter the monospace font for code blocks (leave empty for default Consolas):' },
+  // Toast after saving a custom code font. {font} → the font name the user typed.
+  settingsCodeFontSaved:  { zh: '✓ 代码字体已保存：{font}',
+                            en: '✓ Code font saved: {font}' },
+  // Toast after clearing the custom font back to the default.
+  settingsCodeFontReset:  { zh: '✓ 代码字体已恢复默认',
+                            en: '✓ Code font reset to default' },
 };
 
 /**

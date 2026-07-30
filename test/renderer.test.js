@@ -47,8 +47,11 @@ test('code block becomes div with bg + monospace (no <pre> wrapper leak)', () =>
   assert.match(h, /font-family:[^;"]*Consolas/i);
   // Language label present
   assert.match(h, /js/i);
-  // Code content preserved
-  assert.match(h, /const x = 1/);
+  // Code content preserved (tokens are now wrapped in highlight spans, so
+  // check the pieces rather than the literal "const x = 1" substring).
+  assert.match(h, /const/);
+  assert.match(h, /x = /);
+  assert.match(h, /1/);
 });
 
 test('code block without language', () => {
@@ -98,7 +101,11 @@ test('nested headings + list + code end-to-end', () => {
   assert.match(h, /<h2[^>]*>Overview<\/h2>/);
   assert.match(h, /<li>one<\/li>/);
   assert.match(h, /background-color:\s*#f6f8fa/i);
-  assert.match(h, /print\(1\)/);
+  // print(1) is now syntax-highlighted, so the tokens sit inside color spans;
+  // assert the pieces survive rather than the literal "print(1)" substring.
+  assert.match(h, /print/);
+  assert.match(h, /\(/);
+  assert.match(h, />1</);
 });
 
 test('escapes table-breaking is not needed (converter guarantees clean md)', () => {
@@ -117,14 +124,75 @@ test('code-block leading spaces are encoded as &nbsp; (OneNote drops <pre>)', ()
   // OneNote's paste path ignores `white-space` CSS and drops <pre> semantics,
   // so leading spaces would collapse to nothing on paste. The renderer must
   // encode each line's leading spaces as &nbsp; (which OneNote keeps verbatim)
-  // so code indentation survives.
+  // so code indentation survives. The body is syntax-highlighted (python is a
+  // registered language), so `return`/`f` sit inside <span> wrappers; the
+  // leading-space encoding still has to reach the indented line.
   const h = mdToOneNoteHtml('```python\ndef f():\n    return 1\n```');
   const preBody = h.match(/<pre[^>]*>([\s\S]*?)<\/pre>/)[1];
-  // 4-space indent on the body line survives as 4 non-breaking spaces.
-  assert.ok(preBody.includes('&nbsp;&nbsp;&nbsp;&nbsp;return 1'),
-    '4-space indent encoded as &nbsp;: ' + preBody);
+  // 4-space indent on the body line survives as 4 non-breaking spaces,
+  // immediately before the highlighted `return` token.
+  assert.ok(preBody.includes('&nbsp;&nbsp;&nbsp;&nbsp;<span'),
+    '4-space indent encoded as &nbsp; before the highlighted token: ' + preBody);
   // The 0-indent line is NOT prefixed with &nbsp;.
-  assert.match(preBody, /(^|\n)def f\(\):/);
-  // Still keeps escaping for any code special chars.
-  assert.match(preBody, /return 1/);
+  assert.match(preBody, /(^|\n)<span/);
+  // The code text still survives inside the highlight spans.
+  assert.match(preBody, /return/);
+  assert.match(preBody, /1/);
+});
+
+test('registered language produces inline-coloured syntax spans', () => {
+  // highlight.js returns class-based tokens; OneNote keeps inline
+  // style="color:..." but drops classes. The renderer must rewrite token
+  // classes to inline colors AND strip the class attribute entirely.
+  const h = mdToOneNoteHtml('```js\nconst x = 1;\n```');
+  // keyword (const) and number (1) are both mapped token scopes.
+  assert.match(h, /color:#d73a49/i, 'keyword coloured: ' + h);   // const
+  assert.match(h, /color:#005cc5/i, 'number coloured: ' + h);    // 1
+  // No hljs class must leak — OneNote would not colour it.
+  assert.doesNotMatch(h, /class="hljs/, 'no hljs class leaked: ' + h);
+});
+
+test('unregistered language falls back to plain escaped text', () => {
+  // A language highlight.js doesn't know must not throw — it renders as plain
+  // (escaped) text, identical to pre-highlighting behaviour (zero regression).
+  const h = mdToOneNoteHtml('```brainfuck\n+++<[>]\n```');
+  assert.doesNotMatch(h, /<span style="color:/, 'no colour spans for unknown lang: ' + h);
+  assert.match(h, /\+\+\+/, 'content preserved: ' + h);
+  // Special chars are still HTML-escaped.
+  assert.match(h, /&lt;\[&gt;\]/, 'special chars escaped: ' + h);
+});
+
+test('custom code font from localStorage leads the font-family stack', () => {
+  // The user-configured font (set via the gear button) must come FIRST in the
+  // font-family stack so it wins when installed, with Consolas as fallback.
+  // Node has no localStorage by default, so stub a minimal one for this test.
+  const store = {};
+  const origLS = globalThis.localStorage;
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (k) => (k in store ? store[k] : null),
+      setItem: (k, v) => { store[k] = String(v); },
+      removeItem: (k) => { delete store[k]; },
+    },
+  });
+  try {
+    store['ai-copy-code-font'] = 'Maple Mono NF CN';
+    const h = mdToOneNoteHtml('```\nx\n```');
+    assert.match(h, /font-family:'Maple Mono NF CN',Consolas,'Courier New',monospace/);
+    // The custom font must precede the Consolas fallback.
+    const stack = h.match(/font-family:([^;"]*)/)[1];
+    assert.ok(stack.indexOf('Maple Mono NF CN') < stack.indexOf('Consolas'),
+      'custom font precedes Consolas: ' + stack);
+
+    // Clearing the setting restores the default stack (no custom font).
+    delete store['ai-copy-code-font'];
+    const h2 = mdToOneNoteHtml('```\nx\n```');
+    assert.doesNotMatch(h2, /Maple Mono/);
+    assert.match(h2, /font-family:Consolas,'Courier New',monospace/);
+  } finally {
+    // Restore (or remove) so other tests aren't affected.
+    if (origLS === undefined) delete globalThis.localStorage;
+    else globalThis.localStorage = origLS;
+  }
 });

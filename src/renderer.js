@@ -4,16 +4,63 @@
  * Stage 2 of the pipeline. Takes clean Markdown (from converter.js) and emits
  * HTML aligned with what OneNote reliably preserves on paste:
  *   - code blocks become <div> with bg/monospace (OneNote drops <pre> semantics)
+ *   - code blocks get syntax highlighting via highlight.js; because OneNote
+ *     keeps neither class names nor <style> blocks, token classes are rewritten
+ *     to inline style="color:..." against a bundled light palette.
  *   - tables carry a border="1" attribute (style border is ignored)
  *   - headings get OneNote's signature dark-blue color
  *
  * Reference: https://learn.microsoft.com/en-us/graph/onenote-input-output-html
  */
 import { Marked } from 'marked';
+import hljs from 'highlight.js/lib/core';
+import javascript from 'highlight.js/lib/languages/javascript';
+import typescript from 'highlight.js/lib/languages/typescript';
+import python from 'highlight.js/lib/languages/python';
+import bash from 'highlight.js/lib/languages/bash';
+import cpp from 'highlight.js/lib/languages/cpp';
+import java from 'highlight.js/lib/languages/java';
+import go from 'highlight.js/lib/languages/go';
+import rust from 'highlight.js/lib/languages/rust';
+import sql from 'highlight.js/lib/languages/sql';
+import json from 'highlight.js/lib/languages/json';
+import xml from 'highlight.js/lib/languages/xml';
+import markdownLang from 'highlight.js/lib/languages/markdown';
+import css from 'highlight.js/lib/languages/css';
+
+// Register a curated set of common languages. hljs carries its own alias
+// table (js/javascript, py/python, sh/bash, html/xml, ts/typescript, c/cpp…),
+// so callers can pass any alias and it resolves here. Languages not in this
+// set fall back to plain text — same behaviour as before highlighting existed.
+[
+  ['javascript', javascript], ['typescript', typescript], ['python', python],
+  ['bash', bash], ['cpp', cpp], ['java', java], ['go', go], ['rust', rust],
+  ['sql', sql], ['json', json], ['xml', xml], ['markdown', markdownLang],
+  ['css', css],
+].forEach(([name, def]) => hljs.registerLanguage(name, def));
 
 const ON_HEADING_COLOR = '#1e4e79';
 const CODE_BG = '#f6f8fa';
-const CODE_FONT = "Consolas,'Courier New',monospace";
+
+/** localStorage key holding the user's custom code font name (may be absent). */
+export const CODE_FONT_KEY = 'ai-copy-code-font';
+const CODE_FONT_FALLBACK = "Consolas,'Courier New',monospace";
+
+/**
+ * Build the font-family stack for code blocks. A user-configured font (stored
+ * in localStorage, set via the gear button) is placed FIRST so it wins when
+ * installed, with Consolas/Courier/monospace as the fallback chain so a
+ * missing font never collapses to a proportional face. Reads defensively —
+ * localStorage can throw in private mode or when sandboxed.
+ */
+function getCodeFont() {
+  let user = '';
+  try { user = (localStorage.getItem(CODE_FONT_KEY) || '').trim(); } catch (_) { /* storage blocked */ }
+  if (!user) return CODE_FONT_FALLBACK;
+  // Escape any single quotes inside the family name for the CSS string.
+  const safe = user.replace(/'/g, "\\'");
+  return `'${safe}',${CODE_FONT_FALLBACK}`;
+}
 
 // OneNote's own heading style, reverse-engineered from its output HTML
 // (https://learn.microsoft.com/en-us/graph/onenote-input-output-html):
@@ -40,13 +87,16 @@ function buildMarked() {
         return `<h${depth} style="${headingStyle(depth)}">${text}</h${depth}>\n`;
       },
       // Code block → OneNote-friendly div. OneNote does not preserve <pre>;
-      // we render a styled div with an optional language label.
+      // we render a styled div with an optional language label. When the
+      // language is registered, the body is syntax-highlighted (hljs), with
+      // token classes rewritten to inline color styles (see highlightToHtml).
       code({ text, lang }) {
         const language = (lang || '').trim();
+        const font = getCodeFont();
         const label = language
-          ? `<div style="font-family:${CODE_FONT};font-size:10pt;color:#6a737d;padding:2px 8px 0 8px">${escapeHtml(language)}</div>`
+          ? `<div style="font-family:${font};font-size:10pt;color:#6a737d;padding:2px 8px 0 8px">${escapeHtml(language)}</div>`
           : '';
-        const body = `<pre style="margin:0;padding:8px;white-space:pre-wrap;word-break:break-word;font-family:${CODE_FONT};font-size:10pt">${codeBodyToHtml(text)}</pre>`;
+        const body = `<pre style="margin:0;padding:8px;white-space:pre-wrap;word-break:break-word;font-family:${font};font-size:10pt">${codeBodyToHtml(text, language)}</pre>`;
         return `<div style="background-color:${CODE_BG};border:1px solid #e1e4e8;border-radius:4px;margin:8px 0;overflow-x:auto">${label}${body}</div>`;
       },
     },
@@ -65,21 +115,97 @@ function escapeHtml(s) {
     .replace(/>/g, '&gt;');
 }
 
+// highlight.js token scope → inline color. Values are the GitHub light theme,
+// chosen for legibility against the CODE_BG (#f6f8fa) light-grey background.
+// OneNote keeps inline style="color:..." but drops class names entirely, so we
+// map each hljs class to a hex color and strip the class. Unmapped scopes
+// (e.g. tag names) get no span styling and inherit the default code color —
+// matching how hljs themes leave plain text uncoloured.
+const TOKEN_COLORS = {
+  keyword: '#d73a49', 'selector-tag': '#d73a49', 'selector-id': '#d73a49',
+  'selector-class': '#d73a49', built_in: '#005cc5', builtin: '#005cc5',
+  type: '#005cc5', 'class-builtin': '#005cc5', literal: '#005cc5',
+  number: '#005cc5', symbol: '#005cc5', bullet: '#005cc5', link: '#032f62',
+  string: '#032f62', 'meta-string': '#032f62', regexp: '#032f62',
+  comment: '#6a737d', quote: '#6a737d', doctag: '#6a737d',
+  title: '#6f42c1', 'title.function_': '#6f42c1', 'title.class_': '#6f42c1',
+  section: '#6f42c1', 'function.title': '#6f42c1', 'class.title': '#6f42c1',
+  attr: '#005cc5', attribute: '#005cc5', 'template-variable': '#e36209',
+  variable: '#e36209', 'meta': '#6a737d', operator: '#005cc5',
+  'property': '#005cc5', 'params': '#24292e',
+};
+
 /**
- * Turn raw code-block text into HTML that survives OneNote paste.
+ * Highlight a code string into an HTML fragment with INLINE colors.
+ *
+ * highlight.js returns markup whose tokens carry class names (e.g.
+ * `<span class="hljs-keyword">`). OneNote's paste path preserves inline
+ * `style="color:..."` but discards class selectors and <style> blocks, so we
+ * rewrite each token's classes to an inline color and drop the class attr.
+ * A span may carry several space-separated classes; we use the first one that
+ * has a mapping (hljs orders them outermost→innermost, so the first mapped is
+ * the most significant scope).
+ *
+ * If the language is unknown or highlighting throws, fall back to plain
+ * escaped text — identical to pre-highlighting behaviour (zero regression).
+ */
+function highlightToHtml(code, lang) {
+  const language = (lang || '').trim().toLowerCase();
+  if (!language || !hljs.getLanguage(language)) return escapeHtml(code);
+  try {
+    const { value } = hljs.highlight(code, { language });
+    return rewriteClassesToInlineColor(value);
+  } catch (_) {
+    return escapeHtml(code);
+  }
+}
+
+/** Rewrite hljs `class="hljs-…"` spans to inline `style="color:…"`; drop the class. */
+function rewriteClassesToInlineColor(html) {
+  return html.replace(/<span class="([^"]*)">/g, (whole, classes) => {
+    // hljs emits space-separated classes, each prefixed with `hljs-`
+    // (e.g. `hljs-title hljs-function_`). Strip the prefix before lookup.
+    const tokens = classes.split(/\s+/).map((c) => c.replace(/^hljs-/, ''));
+    const matched = tokens.find((tok) => Object.prototype.hasOwnProperty.call(TOKEN_COLORS, tok));
+    if (!matched) return '<span>'; // no mapping → unstyled span (keeps grouping, drops class)
+    return `<span style="color:${TOKEN_COLORS[matched]}">`;
+  });
+}
+
+/**
+ * Turn raw code-block text into HTML that survives OneNote paste, optionally
+ * syntax-highlighted.
  *
  * OneNote's clipboard paste path drops <pre> semantics AND ignores the
  * `white-space` CSS property (it's not in the supported-styles list, see
  * https://learn.microsoft.com/en-us/graph/onenote-input-output-html), so a
  * `    return 1` line pastes as `return 1` — code indentation collapses.
  *
- * The fix: escape special chars first, then encode each line's LEADING run
- * of spaces as &nbsp; (which OneNote keeps verbatim). We only encode leading
- * spaces — intra-line alignment is rare in source and &nbsp; there would
- * block word-wrap. Tabs in source are left as-is; real-world indented code
- * from these AI sites uses spaces.
+ * The fix: encode each line's LEADING run of spaces as &nbsp; (which OneNote
+ * keeps verbatim). We only encode leading spaces — intra-line alignment is
+ * rare in source and &nbsp; there would block word-wrap. Tabs are left as-is;
+ * real-world indented code from these AI sites uses spaces.
+ *
+ * When `lang` is a registered highlight.js language, the body is first run
+ * through highlightToHtml (which already HTML-escapes the text). Leading-space
+ * encoding then operates per-line but SKIPS lines that begin with a tag char
+ * (`<`), because a highlighted line typically starts with `<span …>` and has
+ * no literal leading spaces to preserve — running the regex there would only
+ * corrupt the markup. Plain-text lines (starting with a space or other char)
+ * are encoded exactly as before. For unregistered/empty languages the whole
+ * body is escaped first, then encoded line-by-line as before.
  */
-function codeBodyToHtml(text) {
+function codeBodyToHtml(text, lang) {
+  if (lang && hljs.getLanguage(lang)) {
+    const highlighted = highlightToHtml(text, lang);
+    // Encode leading spaces, but only on lines that are plain text (don't
+    // start with a tag). Highlighted indented code keeps its indentation as
+    // literal spaces inside the text content, which still need encoding.
+    return highlighted.replace(/^.*$/gm, (line) =>
+      line.startsWith('<')
+        ? line
+        : line.replace(/^( +)/, (lead) => '&nbsp;'.repeat(lead.length)));
+  }
   return escapeHtml(text).replace(/^.*$/gm, (line) =>
     line.replace(/^( +)/, (lead) => '&nbsp;'.repeat(lead.length)));
 }

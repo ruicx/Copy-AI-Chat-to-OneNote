@@ -36,11 +36,11 @@ across platforms. Do not "optimise" by short-circuiting this pipeline.
 | `ai-chat-copy.user.js` | **Build output.** The shipped userscript. Do not hand-edit — regenerate with `npm run build`. |
 | `src/index.js` | Userscript entry: pick adapter by host, install Trusted Types default policy, mount UI. |
 | `src/converter.js` | **Stage 1.** `htmlToMd(input, ctx)` — recursive DOM→Markdown. The core file; most format logic lives here. |
-| `src/renderer.js` | **Stage 2.** `mdToOneNoteHtml(md)` — Marked + post-processing into OneNote-friendly HTML (styled `<div>` for code, `border="1"` on tables, OneNote heading style). |
+| `src/renderer.js` | **Stage 2.** `mdToOneNoteHtml(md)` — Marked + post-processing into OneNote-friendly HTML (styled `<div>` for code, `border="1"` on tables, OneNote heading style). Also registers highlight.js languages and renders syntax-highlighted code blocks with inline colors (see invariant #5). |
 | `src/pipeline.js` | Orchestration: `renderMessage`, `renderConversation`, `renderTurn`, `findTurnIndex`. Adds role badges + dividers at the HTML layer. |
 | `src/clipboard.js` | **Stage 3.** `copyForOneNote(html, text)` — `ClipboardItem` write with `execCommand` fallback. |
 | `src/i18n.js` | Bilingual string table (zh/en) + `t(key, vars)`. Locale detected once from `navigator.language` (`zh*` → zh, else en). |
-| `src/ui.js` | FAB, per-message buttons, native-toolbar injection, toast. All in a Shadow DOM. |
+| `src/ui.js` | FAB (with a hover-revealed gear button for settings), per-message buttons, native-toolbar injection, toast. All in a Shadow DOM. |
 | `src/platforms/base.js` | Adapter contract + `queryFirst` / `queryAll` fallback helpers. |
 | `src/platforms/*.js` | One adapter per platform. ChatGPT & Gemini are calibrated; the rest are heuristic fallbacks. |
 | `test/` | Node `node:test` suite. Converter/renderer/pipeline run via linkedom; adapters run against `test/fixtures/*.html`. |
@@ -73,6 +73,19 @@ clone-an-existing-button, default below/semibold tooltip, and an overlay button
 per message. **Keep that fallback path intact** — it is what ChatGPT relies on
 and what uncalibrated platforms fall back to.
 
+## Settings & localStorage keys
+
+The FAB carries a hover-revealed **gear button** (a child element, so it
+follows the FAB on drag without separate position-sync). Clicking it opens a
+`prompt()` for the code-block monospace font; the value is read back by
+`getCodeFont()` in `src/renderer.js` and placed first in the code-block
+`font-family` stack (Consolas/Courier/monospace as fallback). Two keys live in
+`localStorage`:
+
+- `ai-copy-fab-position` — `{x,y}` of the FAB, saved on drag (`src/ui.js`).
+- `ai-copy-code-font` — user font name; empty/absent → default Consolas
+  (`src/ui.js` writes it, `src/renderer.js` reads it).
+
 ## Critical invariants (do not break these)
 
 1. **Never edit `ai-chat-copy.user.js` directly.** Change source in `src/`,
@@ -91,7 +104,18 @@ and what uncalibrated platforms fall back to.
    why paste fidelity works, per
    [OneNote input/output HTML docs](https://learn.microsoft.com/en-us/graph/onenote-input-output-html)):
    - Code blocks: styled `<div>` with bg + monospace, **not** bare `<pre><code>`
-     (OneNote drops `<pre>` semantics).
+     (OneNote drops `<pre>` semantics). Since v0.2.0 the body is also
+     **syntax-highlighted** via highlight.js (`lib/core` + a curated set of
+     languages, registered in `src/renderer.js`). hljs emits class-based
+     tokens (`class="hljs-keyword"`), but OneNote keeps neither class names
+     nor `<style>` blocks — so `rewriteClassesToInlineColor()` rewrites each
+     token to **inline `style="color:…"`** from the `TOKEN_COLORS` table (a
+     GitHub-light palette chosen for legibility on the `#f6f8fa` background)
+     and **strips the class**. Unregistered/unknown languages fall back to
+     plain escaped text — identical to pre-highlighting behaviour, zero
+     regression. The converter (`src/converter.js`) is **not** involved; the
+     language comes straight from the Markdown fence info and flows through
+     hljs's own alias table (`js`→javascript, `py`→python, `sh`→bash, …).
    - Tables: `border="1"` **attribute** (style border is ignored), no
      rowspan/colspan.
    - Headings: OneNote's exact inline style (`color:#1e4e79` + its font-size/margin)

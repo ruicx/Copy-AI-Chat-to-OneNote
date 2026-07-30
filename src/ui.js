@@ -8,6 +8,7 @@
 import { renderMessage, renderConversation, renderTurn, findTurnIndex } from './pipeline.js';
 import { copyForOneNote } from './clipboard.js';
 import { t } from './i18n.js';
+import { CODE_FONT_KEY } from './renderer.js';
 
 const STYLES = `
   :host { all: initial; }
@@ -24,6 +25,29 @@ const STYLES = `
   .fab:active { transform: scale(.96); }
   .fab[disabled] { opacity: .55; cursor: not-allowed; }
   .fab.dragging { transition: none; cursor: grabbing; opacity: .9; }
+
+  /* Settings (gear) button — a child of the FAB, positioned just outside the
+     FAB's left edge. Because it is absolutely positioned within the (fixed)
+     FAB, it automatically follows the FAB when the FAB is dragged — no extra
+     position-sync logic needed. It only appears on FAB hover so it never
+     crowds the page at rest. */
+  .fab.settings {
+    position: absolute; top: 7px; right: 100%; margin-right: 6px;
+    width: 38px; height: 38px; border-radius: 50%;
+    background: #2563eb; color: #fff; border: none; cursor: pointer;
+    font-size: 18px; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 4px 14px rgba(0,0,0,.28); user-select: none;
+    opacity: 0; pointer-events: none;
+    transform: translateX(6px) scale(.9);
+    transition: opacity .12s ease, transform .12s ease, background .12s ease;
+  }
+  .fab.settings:hover { background: #1d4ed8; }
+  .fab:hover .fab.settings,
+  .fab.settings:hover {
+    opacity: 1; pointer-events: auto;
+    transform: translateX(0) scale(1);
+  }
+  .fab.dragging .fab.settings { opacity: 0 !important; pointer-events: none; }
 
   .copy-btn {
     background: transparent; border: 1px solid #d1d5db; border-radius: 6px;
@@ -155,8 +179,48 @@ function makeDraggable(fab) {
 }
 
 /**
+ * Read the current custom code font from localStorage (may be absent).
+ * Reads defensively — localStorage can throw when sandboxed.
+ */
+function readCodeFont() {
+  try { return (localStorage.getItem(CODE_FONT_KEY) || '').trim(); } catch (_) { return ''; }
+}
+
+/**
+ * Open the code-font prompt. Called from the gear button inside the FAB.
+ * - Cancel (null)  → no-op.
+ * - Empty string   → clear the setting, toast "reset to default".
+ * - Anything else  → store it, toast "saved".
+ */
+function promptCodeFont(shadow) {
+  const current = readCodeFont();
+  let value;
+  try {
+    value = prompt(t('settingsCodeFontPrompt'), current);
+  } catch (_) {
+    toast(shadow, t('toastFail', { err: 'prompt blocked' }), 2200);
+    return;
+  }
+  // prompt() returns null when the user clicks Cancel — treat as no change.
+  if (value === null) return;
+  const trimmed = value.trim();
+  try {
+    if (trimmed) {
+      localStorage.setItem(CODE_FONT_KEY, trimmed);
+      toast(shadow, t('settingsCodeFontSaved', { font: trimmed }));
+    } else {
+      localStorage.removeItem(CODE_FONT_KEY);
+      toast(shadow, t('settingsCodeFontReset'));
+    }
+  } catch (err) {
+    toast(shadow, t('toastFail', { err: (err && err.message || err) }), 3000);
+  }
+}
+
+/**
  * Mount the floating action button. Clicking copies the whole conversation;
- * dragging moves it (position is remembered across page loads).
+ * dragging moves it (position is remembered across page loads). A gear button
+ * nested inside the FAB opens the code-font setting (revealed on hover).
  * @param {object} adapter  platform adapter with getMessages()
  */
 export function mountFloatingButton(adapter) {
@@ -178,6 +242,22 @@ export function mountFloatingButton(adapter) {
       fab.disabled = false;
     }
   });
+
+  // Gear button — child of the FAB so it follows on drag; opens code-font prompt.
+  const gear = document.createElement('button');
+  gear.className = 'fab settings';
+  gear.type = 'button';
+  gear.title = t('settingsTitle');
+  gear.setAttribute('aria-label', t('settingsTitle'));
+  gear.textContent = '⚙';
+  gear.addEventListener('click', (e) => {
+    // Don't let the click bubble up to the FAB (which would trigger a copy).
+    e.preventDefault();
+    e.stopPropagation();
+    promptCodeFont(shadow);
+  });
+  fab.appendChild(gear);
+
   shadow.appendChild(fab);
   applySavedPosition(fab);
   makeDraggable(fab);
