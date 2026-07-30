@@ -222,6 +222,127 @@ test('code-block indentation is preserved (Gemini and <pre> paths)', () => {
   assert.ok(preMd.includes('    return 1'), '<pre> 4-space indent kept: ' + preMd);
 });
 
+test('Gemini <sequence> step list → ordered list (each step on its own line)', () => {
+  // Regression for the "step list loses line breaks" bug. Gemini renders
+  // numbered steps as a <sequence> Angular custom element whose steps are
+  // plain <div class="sequence-event"> siblings (NOT <li>), with no newline
+  // between them. Before the fix the converter flattened them into one line:
+  //   "1创建缓存文件夹推荐使用纯英文路径...在 D 盘...2打开环境变量设置..."
+  // The CORE assertion: each numbered step MUST land on its own line.
+  const md = htmlToMd(`
+    <sequence>
+      <div class="sequence-container">
+        <div class="sequence-event">
+          <div class="sequence-event-marker-container">
+            <div class="sequence-event-marker">1</div>
+          </div>
+          <div class="sequence-event-content">
+            <div>
+              <div class="sequence-event-title">创建缓存文件夹</div>
+              <div class="sequence-event-subtitle">推荐使用纯英文路径</div>
+            </div>
+            <div class="sequence-event-description">
+              <span class="only-show-to-message-actions" style="display:none">推荐使用纯英文路径。</span>
+              <structured-node-sequence><structured-text>
+                <p>在 D 盘创建一个文件夹，例如：<code>D:\\uv_cache</code>。</p>
+              </structured-text></structured-node-sequence>
+            </div>
+          </div>
+        </div>
+        <div class="sequence-event">
+          <div class="sequence-event-marker-container">
+            <div class="sequence-event-marker">2</div>
+          </div>
+          <div class="sequence-event-content">
+            <div>
+              <div class="sequence-event-title">打开环境变量设置</div>
+            </div>
+            <div class="sequence-event-description">
+              <structured-node-sequence><structured-text>
+                <p>按下 <code>Win</code> 键，搜索"环境变量"。</p>
+              </structured-text></structured-node-sequence>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sequence>
+  `);
+  const lines = md.split('\n');
+  // Step 1 and step 2 are on separate lines (the bug glued them together).
+  assert.ok(/^1\. /.test(lines[0]), 'step 1 on its own line: ' + md);
+  assert.ok(lines.some(l => /^2\. /.test(l)), 'step 2 on its own line: ' + md);
+  // The marker digit is NOT glued onto the title (no "1创建...").
+  assert.doesNotMatch(md, /1创建/, 'marker not glued to title: ' + md);
+  // Title is bolded; subtitle follows in parens.
+  assert.match(md, /\*\*创建缓存文件夹\*\*/);
+  assert.match(md, /推荐使用纯英文路径/);
+  // The HIDDEN duplicate subtitle (display:none export hook) must NOT leak
+  // twice — it should appear at most once (as the real subtitle), never as
+  // the trailing "。" form.
+  assert.doesNotMatch(md, /推荐使用纯英文路径。/, 'hidden export span leaked: ' + md);
+  // Prose of each step survives and keeps its inline code.
+  assert.match(md, /`D:\\uv_cache`/);
+  assert.match(md, /`Win`/);
+});
+
+test('Gemini <sequence> with nested sub-list indents it under the step', () => {
+  // A step's description can contain a real nested <ul> (wrapped in
+  // <structured-list>...). It must render as an indented bullet list that
+  // belongs to that step, not be lost or flattened.
+  const md = htmlToMd(`
+    <sequence>
+      <div class="sequence-container">
+        <div class="sequence-event">
+          <div class="sequence-event-marker-container">
+            <div class="sequence-event-marker">1</div>
+          </div>
+          <div class="sequence-event-content">
+            <div><div class="sequence-event-title">新建用户变量</div></div>
+            <div class="sequence-event-description">
+              <structured-node-sequence>
+                <structured-text><p>点击"新建"。</p></structured-text>
+                <structured-list>
+                  <ul>
+                    <li><structured-node-sequence><structured-text>
+                      <p><b>变量名：</b> 输入 <code>UV_CACHE_DIR</code></p>
+                    </structured-text></structured-node-sequence></li>
+                    <li><structured-node-sequence><structured-text>
+                      <p><b>变量值：</b> 输入 <code>D:\\uv_cache</code></p>
+                    </structured-text></structured-node-sequence></li>
+                  </ul>
+                </structured-list>
+              </structured-node-sequence>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sequence>
+  `);
+  // The nested bullets survive and are indented under step 1.
+  assert.match(md, /- \*\*变量名：\*\* 输入 `UV_CACHE_DIR`/, 'nested bullet 1: ' + md);
+  assert.match(md, /- \*\*变量值：\*\* 输入 `D:\\uv_cache`/, 'nested bullet 2: ' + md);
+});
+
+test('Gemini <sequence> from saved-page fixture (regression)', () => {
+  // End-to-end check against a minimal slice of a real saved Gemini page,
+  // including trailing content that MUST stay outside the step list.
+  const html = readFileSync(
+    new URL('./fixtures/gemini-sequence.html', import.meta.url), 'utf8');
+  const md = htmlToMd(html);
+  // Three numbered steps, each on its own line.
+  assert.match(md, /^1\. /m, 'step 1 marker: ' + md);
+  assert.match(md, /^2\. /m, 'step 2 marker: ' + md);
+  assert.match(md, /^3\. /m, 'step 3 marker: ' + md);
+  // No glue between the marker and the title.
+  assert.doesNotMatch(md, /[123]创建|[123]打开|[123]新建/, 'marker glued to title: ' + md);
+  // Titles are bolded.
+  assert.match(md, /\*\*创建缓存文件夹\*\*/);
+  // Trailing paragraph is NOT swallowed into the step list.
+  assert.match(md, /步骤列表之后的内容/);
+  // The hidden export-hook spans do not leak their duplicate text.
+  assert.equal((md.match(/推荐使用纯英文路径/g) || []).length, 1, 'subtitle leaked twice: ' + md);
+});
+
 test('Gemini <math-inline> converts to $...$ and drops the katex render', () => {
   // Real Gemini DOM: a <span class="math-inline" data-math="..."> wrapping a
   // .katex render subtree (classes + inline styles + KaTeX glyph text). We must

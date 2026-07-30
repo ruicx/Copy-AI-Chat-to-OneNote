@@ -177,6 +177,20 @@ most fragile part of the codebase. Key things:
   converter has a dedicated `case 'code-block'` — if you delete it, code blocks
   corrupt (the language label fuses with the opening fence and swallows the
   rest of the message).
+- Numbered "step list" (步骤列表) renders in a `<sequence>` custom element,
+  **not** `<ol>`. Each step is a plain sibling `<div class="sequence-event">`
+  (not `<li>`) with the number in `.sequence-event-marker`, the title in
+  `.sequence-event-title`, an optional `.sequence-event-subtitle`, and the
+  prose in `.sequence-event-description` (often wrapped in
+  `<structured-node-sequence><structured-text><p>`, and may hold a nested
+  `<structured-list><ul><li>`). The converter has a dedicated
+  `case 'sequence'` → `sequenceToMd()` — if you delete it, every step's
+  number+title+subtitle+prose get mashed onto a single line and all the line
+  breaks between steps vanish. Each step's subtitle is also duplicated as a
+  hidden `<span class="only-show-to-message-actions" style="display:none>`
+  (Gemini's own export hook); `sequenceToMd` drops it by class so the subtitle
+  doesn't appear twice (`isVisuallyHidden()` won't catch it — it matches
+  Gemini's hidden-marker *classes*, not `display:none`).
 - Math renders in `<span class="math-inline">` (inline) / `<div class="math-block">`
   (block), each carrying the raw LaTeX in a `data-math` attribute and wrapping a
   `.katex` / `.katex-display` HTML+CSS render subtree. The converter detects
@@ -237,6 +251,6 @@ recalibrating a platform, save a fixture and add an adapter test.
 ## Commit / PR conventions
 
 - Build before committing if `src/` changed: `npm run build`, then commit both.
-- Run `npm test` before pushing — 105 tests should all pass.
+- Run `npm test` before pushing — 108 tests should all pass.
 - Keep the userscript header version in `build.mjs` in sync with
   `package.json` if you bump versions.

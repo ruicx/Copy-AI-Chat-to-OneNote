@@ -2247,6 +2247,9 @@ $$${mathTex}$$
         return listToMd(node, ctx, false);
       case "ol":
         return listToMd(node, ctx, true);
+      case "sequence": {
+        return sequenceToMd(node, ctx);
+      }
       case "pre": {
         const codeEl = node.querySelector("code");
         const raw = (codeEl || node).textContent.replace(/\n$/, "");
@@ -2345,6 +2348,50 @@ $$${mathTex}$$
       }
     }
     return lines.join("\n") + "\n\n";
+  }
+  var SEQUENCE_EXPORT_HOOK_CLASS = /(^|\s)only-show-to-message-actions(\s|$)/;
+  function sequenceToMd(node, ctx) {
+    const events = node.classList && node.classList.contains("sequence-event") ? [node] : Array.from(node.querySelectorAll(".sequence-event"));
+    if (!events.length) {
+      return childrenToMd(node, ctx);
+    }
+    const lines = [];
+    let i = 1;
+    for (const ev of events) {
+      const marker = `${i}. `;
+      i++;
+      let title = "";
+      let subtitle = "";
+      let descriptionMd = "";
+      const titleEl = ev.querySelector(".sequence-event-title");
+      if (titleEl) title = childrenToMd(titleEl, ctx).trim();
+      const subtitleEl = ev.querySelector(".sequence-event-subtitle");
+      if (subtitleEl) subtitle = childrenToMd(subtitleEl, ctx).trim();
+      const descEl = ev.querySelector(".sequence-event-description");
+      if (descEl) {
+        let desc = "";
+        for (const child of descEl.childNodes) {
+          if (child.nodeType === 1 && SEQUENCE_EXPORT_HOOK_CLASS.test(child.getAttribute("class") || "")) {
+            continue;
+          }
+          desc += nodeToMd(child, ctx);
+        }
+        descriptionMd = desc.trim();
+      }
+      let head = title ? `**${title}**` : "";
+      if (subtitle) head += head ? `\uFF08${subtitle}\uFF09` : subtitle;
+      const itemLines = [];
+      if (head) itemLines.push(`${marker}${head}`);
+      if (descriptionMd) {
+        for (const dl of descriptionMd.split("\n")) {
+          itemLines.push("   " + dl);
+        }
+      }
+      if (!itemLines.length) continue;
+      if (!head) itemLines[0] = `${marker}${itemLines[0].trimStart()}`;
+      lines.push(...itemLines);
+    }
+    return lines.length ? lines.join("\n") + "\n\n" : "";
   }
   function tableToMd(node, ctx) {
     const rows = [];

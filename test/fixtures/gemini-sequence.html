@@ -1,0 +1,113 @@
+<!--
+  Minimal but faithful slice of Gemini's real DOM for a step list
+  ("步骤列表" / numbered procedure). Captured from a saved Gemini page.
+  Kept small so tests stay readable; preserves the exact structures that
+  broke conversion before:
+    - <sequence> Angular custom element (NOT <ol>)
+    - each step is a plain <div class="sequence-event"> (NOT <li>)
+    - the marker number is in <div class="sequence-event-marker"> as text
+    - title / subtitle / description are sibling <div>s inside the step
+    - a HIDDEN duplicate of the subtitle in
+      <span class="only-show-to-message-actions" style="display:none">
+      (Gemini's own export hook) — copying both yields duplicated text
+    - rich prose wrapped in <structured-node-sequence><structured-text><p>
+    - a nested sub-list uses real <ul><li> wrapped in <structured-list>
+  Stripped: Angular attribute noise (_ngcontent / _nghost / jslog / ids)
+  that carries no conversion-relevant meaning.
+  Like the other Gemini fixtures, the content is left UNindented to mirror
+  the real minified page (no source-whitespace text nodes between tags).
+-->
+<model-response>
+<message-content>
+<div class="model-response-text">
+<div class="markdown markdown-main-panel">
+<p>为了在 D 盘重新激活硬链接的"魔法"，你需要通过配置环境变量 <code>UV_CACHE_DIR</code>，将 <code>uv</code> 的缓存目录迁移到 D 盘。</p>
+<div class="attachment-container unknown">
+<response-element class="no-md">
+<sequence class="lm-enabled">
+<div class="sequence-container">
+<div class="sequence-event">
+<div class="sequence-event-marker-container">
+<div class="sequence-event-marker">1</div>
+<div class="sequence-event-line"></div>
+</div>
+<div class="sequence-event-content">
+<div>
+<div class="sequence-event-title">创建缓存文件夹</div>
+<div class="sequence-event-subtitle">推荐使用纯英文路径</div>
+</div>
+<div class="sequence-event-description">
+<span class="only-show-to-message-actions" style="display:none">推荐使用纯英文路径。</span>
+<structured-node-sequence>
+<structured-text>
+<p>在 D 盘创建一个专门用于存放缓存的文件夹，例如：<code>D:\uv_cache</code>。</p>
+</structured-text>
+</structured-node-sequence>
+</div>
+</div>
+</div>
+<div class="sequence-event">
+<div class="sequence-event-marker-container">
+<div class="sequence-event-marker">2</div>
+</div>
+<div class="sequence-event-content">
+<div>
+<div class="sequence-event-title">打开环境变量设置</div>
+<div class="sequence-event-subtitle">快捷键操作</div>
+</div>
+<div class="sequence-event-description">
+<span class="only-show-to-message-actions" style="display:none">快捷键操作。</span>
+<structured-node-sequence>
+<structured-text>
+<p>按下 <code>Win</code> 键，搜索"环境变量"。</p>
+</structured-text>
+</structured-node-sequence>
+</div>
+</div>
+</div>
+<div class="sequence-event">
+<div class="sequence-event-marker-container">
+<div class="sequence-event-marker">3</div>
+</div>
+<div class="sequence-event-content">
+<div>
+<div class="sequence-event-title">新建用户变量</div>
+<div class="sequence-event-subtitle">仅对当前用户生效即可</div>
+</div>
+<div class="sequence-event-description">
+<span class="only-show-to-message-actions" style="display:none">仅对当前用户生效即可。</span>
+<structured-node-sequence>
+<structured-text>
+<p>在"用户变量"区域，点击<strong>"新建"</strong>。</p>
+</structured-text>
+<structured-list>
+<ul>
+<li>
+<structured-node-sequence>
+<structured-text>
+<p><b>变量名：</b> 输入 <code>UV_CACHE_DIR</code></p>
+</structured-text>
+</structured-node-sequence>
+</li>
+<li>
+<structured-node-sequence>
+<structured-text>
+<p><b>变量值：</b> 输入路径，例如 <code>D:\uv_cache</code></p>
+</structured-text>
+</structured-node-sequence>
+</li>
+</ul>
+</structured-list>
+</structured-node-sequence>
+</div>
+</div>
+</div>
+</div>
+</sequence>
+</response-element>
+</div>
+<p>步骤列表之后的内容，必须出现在列表之外。</p>
+</div>
+</div>
+</message-content>
+</model-response>

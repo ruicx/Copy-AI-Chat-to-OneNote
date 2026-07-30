@@ -331,6 +331,24 @@ function nodeToMd(node, ctx) {
     case 'ol':
       return listToMd(node, ctx, true);
 
+    case 'sequence': {
+      // Gemini renders a numbered "step list" (步骤列表) as an Angular custom
+      // element — NOT an <ol>. Each step is a plain sibling
+      // <div class="sequence-event"> (NOT <li>), with NO newline/separator
+      // between steps. Inside each step:
+      //   <div class="sequence-event-marker">1</div>      ← the number as text
+      //   <div class="sequence-event-title">…</div>       ← step title
+      //   <div class="sequence-event-subtitle">…</div>    ← optional subtitle
+      //   <div class="sequence-event-description">…</div> ← prose (often wrapped
+      //     in <structured-node-sequence><structured-text><p>…</p>, and may hold
+      //     a nested <structured-list><ul><li>…).
+      // Without this case the whole thing falls through to the default
+      // childrenToMd flattening: the marker digit, title, subtitle, and prose
+      // of EVERY step get mashed onto a single line → line breaks lost (the
+      // bug this fixes). We rebuild a real ordered list, one step per line.
+      return sequenceToMd(node, ctx);
+    }
+
     case 'pre': {
       // <pre><code ...> or bare <pre>
       const codeEl = node.querySelector('code');
@@ -459,6 +477,84 @@ function listToMd(node, ctx, ordered) {
     }
   }
   return lines.join('\n') + '\n\n';
+}
+
+// Class fragments identifying Gemini export-hook chrome inside a step.
+// Gemini duplicates each step's subtitle as a hidden
+// <span class="only-show-to-message-actions" style="display:none>…</span>
+// purely for its own copy/export button. It carries no visible content (and
+// is a verbatim repeat of the real subtitle, often with a trailing "。").
+// The visually-hidden check by class above does NOT catch it (it relies on
+// Gemini's own hidden-marker class, not display:none), so we drop it here by
+// class to avoid the subtitle appearing twice in the output.
+const SEQUENCE_EXPORT_HOOK_CLASS = /(^|\s)only-show-to-message-actions(\s|$)/;
+
+function sequenceToMd(node, ctx) {
+  const events = node.classList && node.classList.contains('sequence-event')
+    ? [node]                                       // single step passed directly
+    : Array.from(node.querySelectorAll('.sequence-event'));
+  if (!events.length) {
+    // No step rows — degrade to flattening rather than emitting nothing.
+    return childrenToMd(node, ctx);
+  }
+
+  const lines = [];
+  let i = 1;
+  for (const ev of events) {
+    const marker = `${i}. `;
+    i++;
+
+    // --- Gather the step's title / subtitle / description, skipping the
+    //     marker number (we generate our own) and the hidden export-hook span.
+    let title = '';
+    let subtitle = '';
+    let descriptionMd = '';
+
+    const titleEl = ev.querySelector('.sequence-event-title');
+    if (titleEl) title = childrenToMd(titleEl, ctx).trim();
+
+    const subtitleEl = ev.querySelector('.sequence-event-subtitle');
+    if (subtitleEl) subtitle = childrenToMd(subtitleEl, ctx).trim();
+
+    const descEl = ev.querySelector('.sequence-event-description');
+    if (descEl) {
+      // Walk the description's children ourselves so we can DROP the hidden
+      // export-hook span by class (querySelector(':scope > ...') is fiddly
+      // across linkedom/native, so iterate childNodes).
+      let desc = '';
+      for (const child of descEl.childNodes) {
+        if (child.nodeType === 1 && SEQUENCE_EXPORT_HOOK_CLASS.test(child.getAttribute('class') || '')) {
+          continue;
+        }
+        desc += nodeToMd(child, ctx);
+      }
+      descriptionMd = desc.trim();
+    }
+
+    // --- Compose the step's first line: bold title, optional (subtitle).
+    let head = title ? `**${title}**` : '';
+    if (subtitle) head += head ? `（${subtitle}）` : subtitle;
+    // (en locale uses different parens, but the subtitle text itself is
+    // already localized by Gemini; we just wrap it. The visual is identical.)
+
+    // --- Compose the rest: description prose + any nested list, each
+    //     subsequent block indented under the marker so it belongs to this
+    //     step (3 spaces aligns under "1. "). One blank line separates the
+    //     head from the description so marked renders it as a multi-line
+    //     list item rather than joining them with a space.
+    const itemLines = [];
+    if (head) itemLines.push(`${marker}${head}`);
+    if (descriptionMd) {
+      for (const dl of descriptionMd.split('\n')) {
+        itemLines.push('   ' + dl);
+      }
+    }
+    if (!itemLines.length) continue;          // empty step → skip
+    if (!head) itemLines[0] = `${marker}${itemLines[0].trimStart()}`;
+    lines.push(...itemLines);
+  }
+
+  return lines.length ? lines.join('\n') + '\n\n' : '';
 }
 
 function tableToMd(node, ctx) {
