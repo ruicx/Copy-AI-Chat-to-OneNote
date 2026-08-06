@@ -162,6 +162,40 @@ test('unregistered language falls back to plain escaped text', () => {
   assert.match(h, /&lt;\[&gt;\]/, 'special chars escaped: ' + h);
 });
 
+// Each entry: [fenceLang, sampleSource]. hljs carries its own alias table, so
+// once the canonical name is registered, aliases (yml, tex, ps1, h, …) resolve
+// automatically — we spot-check one alias per language below.
+const HIGHLIGHTED_LANGUAGES = [
+  ['yaml', 'key: value'],
+  ['latex', '\\section{Title}'],
+  ['powershell', 'Get-ChildItem'],
+  ['c', 'int main() {}'],
+  ['matlab', 'function y = f(x)'],
+];
+
+for (const [lang, sample] of HIGHLIGHTED_LANGUAGES) {
+  test(`'${lang}' fence produces inline-coloured syntax spans`, () => {
+    const h = mdToOneNoteHtml('```' + lang + '\n' + sample + '\n```');
+    // Registered → at least one token mapped to an inline colour.
+    assert.match(h, /<span style="color:#?[0-9a-f]{3,6}/i, lang + ' coloured: ' + h);
+    // No hljs class must leak — OneNote would not colour it.
+    assert.doesNotMatch(h, /class="hljs/, 'no hljs class leaked for ' + lang + ': ' + h);
+  });
+}
+
+// Aliases come from hljs's built-in alias table; verify they resolve too.
+test('language aliases resolve to their registered parent', () => {
+  // yaml → yml, latex → tex, powershell → ps1
+  for (const [canonical, alias, sample] of [
+    ['yaml', 'yml', 'key: value'],
+    ['latex', 'tex', '\\section{Title}'],
+    ['powershell', 'ps1', 'Get-ChildItem'],
+  ]) {
+    const h = mdToOneNoteHtml('```' + alias + '\n' + sample + '\n```');
+    assert.match(h, /<span style="color:/i, alias + ' (alias of ' + canonical + ') not coloured: ' + h);
+  }
+});
+
 test('custom code font from localStorage leads the font-family stack', () => {
   // The user-configured font (set via the gear button) must come FIRST in the
   // font-family stack so it wins when installed, with Consolas as fallback.

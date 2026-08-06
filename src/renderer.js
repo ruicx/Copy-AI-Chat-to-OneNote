@@ -36,6 +36,11 @@ import json from 'highlight.js/lib/languages/json';
 import xml from 'highlight.js/lib/languages/xml';
 import markdownLang from 'highlight.js/lib/languages/markdown';
 import css from 'highlight.js/lib/languages/css';
+import yaml from 'highlight.js/lib/languages/yaml';
+import latex from 'highlight.js/lib/languages/latex';
+import powershell from 'highlight.js/lib/languages/powershell';
+import c from 'highlight.js/lib/languages/c';
+import matlab from 'highlight.js/lib/languages/matlab';
 
 // Register a curated set of common languages. hljs carries its own alias
 // table (js/javascript, py/python, sh/bash, html/xml, ts/typescript, c/cpp…),
@@ -45,7 +50,8 @@ import css from 'highlight.js/lib/languages/css';
   ['javascript', javascript], ['typescript', typescript], ['python', python],
   ['bash', bash], ['cpp', cpp], ['java', java], ['go', go], ['rust', rust],
   ['sql', sql], ['json', json], ['xml', xml], ['markdown', markdownLang],
-  ['css', css],
+  ['css', css], ['yaml', yaml], ['latex', latex], ['powershell', powershell],
+  ['c', c], ['matlab', matlab],
 ].forEach(([name, def]) => hljs.registerLanguage(name, def));
 
 const ON_HEADING_COLOR = '#1e4e79';
