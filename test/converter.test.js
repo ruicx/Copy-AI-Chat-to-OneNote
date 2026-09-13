@@ -18,6 +18,37 @@ setNodeDomParser((html) => {
   return document.querySelector('body');
 });
 
+test('ChatGPT saved-page math uses raw source and preserves display mode', () => {
+  const html = readFileSync(new URL('./fixtures/chatgpt-math.html', import.meta.url), 'utf8');
+  const root = parseHTML(`<body>${html}</body>`).document.querySelector('body');
+  const sources = [...root.querySelectorAll('[data-math-source]')];
+  assert.equal(sources.length, 2);
+  assert.equal(htmlToMd(root), `$${sources[0].getAttribute('data-math-source')}$\n\n$$${sources[1].getAttribute('data-math-source')}$$`);
+});
+
+test('task lists preserve checked state through Markdown and OneNote HTML', async () => {
+  const { mdToOneNoteHtml } = await import('../src/renderer.js');
+  const md = htmlToMd('<ul><li><p><input type="checkbox" checked disabled> Done <strong>task</strong></p></li><li><p><input type="checkbox" disabled> Pending</p></li></ul>');
+  assert.equal(md, '- [x] Done **task**\n- [ ] Pending');
+  const html = mdToOneNoteHtml(md);
+  assert.match(html, /☑ Done <strong>task<\/strong>/);
+  assert.match(html, /☐ Pending/);
+  assert.doesNotMatch(html, /<input|<ul|<li/);
+});
+
+test('ChatGPT multiline display math renders as a native equation payload', async () => {
+  const { mdToOneNoteHtml } = await import('../src/renderer.js');
+  const tex = '\\begin{aligned}\nx &= 1 \\\\\ny &= 2\n\\end{aligned}';
+  const root = parseHTML('<body><span role="math" data-math-source=""><span class="katex-display">visual noise</span></span></body>').document.querySelector('body');
+  root.firstElementChild.setAttribute('data-math-source', tex);
+  const md = htmlToMd(root);
+  assert.equal(md, `$$${tex}$$`);
+  const html = mdToOneNoteHtml(md);
+  assert.match(html, /<math[^>]*display="block"/);
+  assert.match(html, /<mtable/);
+  assert.doesNotMatch(html, /visual noise/);
+});
+
 /* Helper: compare ignoring trailing whitespace per line */
 function norm(s) {
   return s.replace(/[ \t]+$/gm, '').replace(/\n+$/g, '');

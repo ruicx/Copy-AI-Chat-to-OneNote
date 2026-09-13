@@ -80,6 +80,10 @@ const MATH_BLOCK_CLASS = /(^|\s)math-block(\s|$)/;
  *  the visible .katex content instead of silently discarding it). */
 function mathDataAttribute(node) {
   if (!node.getAttribute) return '';
+  // ChatGPT carries the original TeX on the outer role=math wrapper.
+  // Reading its rendered KaTeX descendants loses fractions and superscripts.
+  const source = node.getAttribute('data-math-source');
+  if (source && source.trim()) return source.trim();
   const cls = node.getAttribute('class') || '';
   if (!MATH_INLINE_CLASS.test(cls) && !MATH_BLOCK_CLASS.test(cls)) return '';
   return (node.getAttribute('data-math') || '').trim();
@@ -87,6 +91,9 @@ function mathDataAttribute(node) {
 
 /** 'block' for display math, 'inline' for inline math, '' for non-math. */
 function mathElementKind(node) {
+  if (node.getAttribute && node.hasAttribute('data-math-source')) {
+    return node.querySelector('.katex-display') ? 'block' : 'inline';
+  }
   const cls = (node.getAttribute && node.getAttribute('class')) || '';
   if (MATH_BLOCK_CLASS.test(cls)) return 'block';
   if (MATH_INLINE_CLASS.test(cls)) return 'inline';
@@ -467,7 +474,13 @@ function listToMd(node, ctx, ordered) {
       }
     }
     const text = textParts.join('').replace(/\n+/g, ' ').trim();
-    lines.push(`${marker}${text}`);
+    // Only this item's checkbox counts; a nested task belongs to its own li.
+    const checkbox = Array.from(li.querySelectorAll('input[type="checkbox"]'))
+      .find(input => input.closest('li') === li);
+    const task = checkbox
+      ? `[${typeof checkbox.checked === 'boolean' ? (checkbox.checked ? 'x' : ' ') : (checkbox.hasAttribute('checked') ? 'x' : ' ')}] `
+      : '';
+    lines.push(`${marker}${task}${text}`);
 
     // Indent each nested list item by 2 spaces.
     for (const sub of subLists) {

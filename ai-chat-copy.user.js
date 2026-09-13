@@ -2094,11 +2094,16 @@
   var MATH_BLOCK_CLASS = /(^|\s)math-block(\s|$)/;
   function mathDataAttribute(node) {
     if (!node.getAttribute) return "";
+    const source = node.getAttribute("data-math-source");
+    if (source && source.trim()) return source.trim();
     const cls = node.getAttribute("class") || "";
     if (!MATH_INLINE_CLASS.test(cls) && !MATH_BLOCK_CLASS.test(cls)) return "";
     return (node.getAttribute("data-math") || "").trim();
   }
   function mathElementKind(node) {
+    if (node.getAttribute && node.hasAttribute("data-math-source")) {
+      return node.querySelector(".katex-display") ? "block" : "inline";
+    }
     const cls = node.getAttribute && node.getAttribute("class") || "";
     if (MATH_BLOCK_CLASS.test(cls)) return "block";
     if (MATH_INLINE_CLASS.test(cls)) return "inline";
@@ -2340,7 +2345,9 @@ $$${mathTex}$$
         }
       }
       const text2 = textParts.join("").replace(/\n+/g, " ").trim();
-      lines.push(`${marker}${text2}`);
+      const checkbox = Array.from(li.querySelectorAll('input[type="checkbox"]')).find((input) => input.closest("li") === li);
+      const task = checkbox ? `[${typeof checkbox.checked === "boolean" ? checkbox.checked ? "x" : " " : checkbox.hasAttribute("checked") ? "x" : " "}] ` : "";
+      lines.push(`${marker}${task}${text2}`);
       for (const sub of subLists) {
         for (const subLine of sub.split("\n")) {
           lines.push("  " + subLine);
@@ -24037,6 +24044,19 @@ ${text2}</tr>
     const marked2 = new Marked({ gfm: true, breaks: false });
     marked2.use({
       renderer: {
+        // Form controls are discarded by paste targets. Visible Unicode boxes
+        // preserve task state, without claiming to create native OneNote tags.
+        checkbox({ checked }) {
+          return checked ? "\u2611" : "\u2610";
+        },
+        list(token) {
+          if (!token.items.every((item) => item.task)) return false;
+          return token.items.map((item) => {
+            const body = this.parser.parse(item.tokens, false);
+            return `<div>${item.checked ? "\u2611" : "\u2610"} ${body}</div>
+`;
+          }).join("");
+        },
         // Headings → emit the exact inline style OneNote uses for its built-in
         // heading styles, so paste maps them to real heading styles.
         heading({ tokens, depth }) {
@@ -24304,13 +24324,15 @@ ${DIVIDER}
   .fab {
     position: fixed; right: 24px; bottom: 24px; z-index: 2147483647;
     width: 52px; height: 52px; border-radius: 50%;
-    background: #2563eb; color: #fff; border: none; cursor: pointer;
-    font-size: 22px; box-shadow: 0 4px 14px rgba(0,0,0,.28);
+    background: #202624; color: #fff; border: none; cursor: pointer;
+    font-size: 22px; box-shadow: 0 3px 10px rgba(20,30,25,.18), inset 0 1px 0 rgba(255,255,255,.12);
     display: flex; align-items: center; justify-content: center;
     transition: transform .12s ease, background .12s ease;
     user-select: none; touch-action: none;
   }
-  .fab:hover { background: #1d4ed8; transform: scale(1.06); }
+  .fab:hover { background: #343f39; transform: scale(1.06); }
+  .fab:focus-visible { outline: 2px solid #6b8577; outline-offset: 3px; }
+  .fab > svg { width: 28px; height: 28px; pointer-events: none; }
   .fab:active { transform: scale(.96); }
   .fab[disabled] { opacity: .55; cursor: not-allowed; }
   .fab.dragging { transition: none; cursor: grabbing; opacity: .9; }
@@ -24340,13 +24362,14 @@ ${DIVIDER}
   }
   .fab.settings .gear-icon {
     width: 38px; height: 38px; border-radius: 50%;
-    background: #2563eb; color: #fff; font-size: 18px;
+    background: #202624; color: #fff; font-size: 18px;
     display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 4px 14px rgba(0,0,0,.28);
+    box-shadow: 0 3px 10px rgba(20,30,25,.18);
     transition: background .12s ease, transform .12s ease;
   }
   .fab.settings:hover .gear-icon,
-  .fab.settings:focus-visible .gear-icon { background: #1d4ed8; }
+  .fab.settings:focus-visible .gear-icon { background: #343f39; }
+  .gear-icon svg { width: 19px; height: 19px; pointer-events: none; }
   /* Reveal while the FAB OR the gear itself is hovered \u2014 the overlapping box
      guarantees the cursor never leaves hover coverage in between. */
   .fab:hover .fab.settings,
@@ -24373,6 +24396,34 @@ ${DIVIDER}
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
 `;
+  function makeFabIcon(settings = false) {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    for (const [key, value] of Object.entries({
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      "stroke-width": "1.7",
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round",
+      "aria-hidden": "true",
+      focusable: "false"
+    })) svg.setAttribute(key, value);
+    const paths = settings ? [
+      "M9.5 3.5h5l.6 2.4 2 .9 2.2-.7 2.5 4.3-1.7 1.7v2.3l1.7 1.7-2.5 4.3-2.2-.7-2 .9-.6 2.4h-5l-.6-2.4-2-.9-2.2.7-2.5-4.3 1.7-1.7v-2.3l-1.7-1.7 2.5-4.3 2.2.7 2-.9Z",
+      "M15.5 13.25a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0"
+    ] : [
+      "M8 8V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-3",
+      "M5 8h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Z",
+      "m7 14 2 2 4-4"
+    ];
+    for (const d of paths) {
+      const path = document.createElementNS(ns, "path");
+      path.setAttribute("d", d);
+      svg.appendChild(path);
+    }
+    return svg;
+  }
   function createShadowRoot() {
     const host = document.createElement("div");
     host.id = "ai-copy-host";
@@ -24518,7 +24569,8 @@ ${DIVIDER}
     const fab = document.createElement("button");
     fab.className = "fab";
     fab.title = t("fabTitle");
-    fab.textContent = "\u{1F4CB}";
+    fab.setAttribute("aria-label", t("fabTitle"));
+    fab.appendChild(makeFabIcon());
     fab.addEventListener("click", async () => {
       const messages = adapter.getMessages();
       if (!messages.length) {
@@ -24539,7 +24591,7 @@ ${DIVIDER}
     gear.setAttribute("aria-label", t("settingsTitle"));
     const gearIcon = document.createElement("span");
     gearIcon.className = "gear-icon";
-    gearIcon.textContent = "\u2699";
+    gearIcon.appendChild(makeFabIcon(true));
     gear.appendChild(gearIcon);
     gear.addEventListener("click", (e) => {
       e.preventDefault();

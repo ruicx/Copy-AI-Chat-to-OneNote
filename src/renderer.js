@@ -95,6 +95,16 @@ function buildMarked() {
 
   marked.use({
     renderer: {
+      // Form controls are discarded by paste targets. Visible Unicode boxes
+      // preserve task state, without claiming to create native OneNote tags.
+      checkbox({ checked }) { return checked ? '☑' : '☐'; },
+      list(token) {
+        if (!token.items.every(item => item.task)) return false;
+        return token.items.map(item => {
+          const body = this.parser.parse(item.tokens, false);
+          return `<div>${item.checked ? '☑' : '☐'} ${body}</div>\n`;
+        }).join('');
+      },
       // Headings → emit the exact inline style OneNote uses for its built-in
       // heading styles, so paste maps them to real heading styles.
       heading({ tokens, depth }) {
