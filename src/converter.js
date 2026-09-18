@@ -212,6 +212,59 @@ function stripTrailingNL(s) {
   return s.replace(/\s+$/, '');
 }
 
+// --- ChatGPT code-block widget ---------------------------------------------
+// ChatGPT's 2026 UI renders every code block (assistant AND user messages)
+// as a component div marked data-client-defined-widget="code_block"
+// (mirrored by data-d-component="code_block"):
+//   <div data-client-defined-widget="code_block">
+//     <div class="…sticky…">                       ← header bar, ABOVE the pre
+//       <div class="…"><svg/>PowerShell</div>      ← language label as PLAIN TEXT
+//       <div><button aria-label="复制"><svg/></button></div>
+//     </div>
+//     <div id="code-block-viewer" class="…cm-editor…">
+//       <pre class="cm-content"><code><span>…</span>…</code></pre>  ← CodeMirror
+//     </div>
+//   </div>
+// The old "<pre><code class=language-…>" hook is gone: the label is unclassed
+// text and the <code> has no language- class, so the generic 'div' flattening
+// fuses the label onto the opening fence ("dockerfile```FROM …") and the
+// fence loses its language. These are ordinary divs (like Gemini's math
+// spans), so a switch case would never fire — intercept upstream.
+const CODE_BLOCK_WIDGET_ATTRS = ['data-client-defined-widget', 'data-d-component'];
+
+function isCodeBlockWidget(node) {
+  if (!node.getAttribute) return false;
+  for (const attr of CODE_BLOCK_WIDGET_ATTRS) {
+    if (node.getAttribute(attr) === 'code_block') return true;
+  }
+  return false;
+}
+
+function codeBlockWidgetToMd(node) {
+  const pre = node.querySelector('pre');
+  const codeEl = node.querySelector('code');
+  const source = codeEl || pre || node;
+  const raw = source.textContent.replace(/\n$/, '');
+  // Language: prefer an explicit class on <code>; otherwise recover the
+  // header label ("PowerShell" / "JSON" / "dockerfile"). Once the code, the
+  // copy <button>, and the icon <svg>s are gone, the label is the only text
+  // the widget carries — none of those contribute text themselves.
+  let lang = '';
+  if (codeEl) {
+    const m = (codeEl.className || '').match(/language-([\w-]+)/);
+    if (m) lang = m[1];
+  }
+  if (!lang && (pre || codeEl)) {
+    const clone = node.cloneNode(true);
+    for (const el of clone.querySelectorAll('pre, button, svg')) el.remove();
+    const label = (clone.textContent || '').replace(/\s+/g, ' ').trim();
+    // Accept only a bare language-ish token (covers c++, objective-c, c#);
+    // anything else degrades to a bare fence instead of poisoning it.
+    if (/^[\w+#.-]{1,24}$/.test(label)) lang = label;
+  }
+  return '```' + lang + '\n' + raw + '\n```\n\n';
+}
+
 // --- core recursive converter ---------------------------------------------
 function nodeToMd(node, ctx) {
   if (!node) return '';
@@ -250,6 +303,11 @@ function nodeToMd(node, ctx) {
       ? `\n\n$$${mathTex}$$\n\n`
       : `$${mathTex}$`;
   }
+
+  // ChatGPT code-block widget: intercept before the INLINE table / switch —
+  // see isCodeBlockWidget() above. Emits one clean fence with the header
+  // label as fence info; the CodeMirror spans flatten to plain code text.
+  if (isCodeBlockWidget(node)) return codeBlockWidgetToMd(node);
 
   // Inline elements
   if (tag in INLINE) {

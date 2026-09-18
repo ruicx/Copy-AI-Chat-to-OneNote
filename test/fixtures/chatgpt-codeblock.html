@@ -1,0 +1,88 @@
+<!--
+  ChatGPT DOM fixture — 2026 CodeMirror code-block widget, captured from a
+  saved chatgpt.com page (proxy-config conversation). Structure per block:
+
+    <div data-client-defined-widget=code_block data-d-component=code_block>
+      sticky header bar: icon <svg> + LANGUAGE LABEL (plain text) + copy <button>
+      #code-block-viewer (cm-editor) → pre.cm-content > code > syntax spans
+
+  Load-bearing details this fixture preserves:
+    - the language label is PLAIN TEXT inside an unclassed header div, sitting
+      BEFORE the <pre> — the old "pre > code.language-xxx" hook is gone
+    - the copy <button> carries only an aria-label (no text to leak)
+    - <pre class="cm-content"> wraps <code> whose obfuscated CodeMirror span
+      classes (ͼe/ͼ8/…) are normalized here to cm-* (converter flattens them)
+    - prose paragraphs sit between and after the two blocks, so fence balance
+      is observable
+  Also preserved: the assistant content root is ".puik-root not-prose
+  not-markdown" — the adapter's [class*="markdown"] substring fallback
+  resolves to it (the .markdown class itself no longer exists).
+-->
+<div id="thread">
+  <div data-message-author-role="user" data-message-id="u-1">
+    <div class="whitespace-pre-wrap">docker build 怎么走宿主机代理？</div>
+  </div>
+
+  <div data-message-author-role="assistant" data-message-id="a-1">
+    <div>
+      <div class="puik-root not-prose not-markdown">
+        <div aria-hidden="true" class="pointer-events-none absolute h-px w-px overflow-hidden opacity-0"></div>
+        <div dir="auto" class="DilRenderer ResponseRoot">
+          <p class="TextBase">在 PowerShell 中执行：</p>
+          <div class="chatgptPaletteBoundary" data-client-defined-widget="code_block" data-d-component="code_block">
+            <div class="relative w-full mt-4 mb-1">
+              <div class="select-none sticky z-2">
+                <div class="flex w-full items-center justify-between">
+                  <div class="flex items-center text-sm font-medium">
+                    <svg width="20" height="20" aria-hidden="true"><use href="#icon" /></svg>PowerShell</div>
+                  <div class="flex flex-row items-center">
+                    <button type="button" aria-label="复制" data-state="closed">
+                      <svg width="20" height="20" aria-hidden="true"><use href="#copy" /></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="pointer-events-none absolute"><div class="sticky"></div></div>
+              <div class="relative">
+                <div id="code-block-viewer" dir="ltr" class="cm-editor">
+                  <div class="cm-scroller">
+                    <pre class="cm-content readonly m-0"><code><span class="cm-kw">docker</span><span> </span><span class="cm-kw">build</span><span> `
+  --build-arg HTTP_PROXY=http://host.docker.internal:7890 `
+  --build-arg HTTPS_PROXY=http://host.docker.internal:7890 `
+  </span><span class="cm-kw">-t</span><span> my-image .</span></code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="TextBase">再创建一个临时 Dockerfile 验证：</p>
+          <div class="chatgptPaletteBoundary" data-client-defined-widget="code_block" data-d-component="code_block">
+            <div class="relative w-full mt-4 mb-1">
+              <div class="select-none sticky z-2">
+                <div class="flex w-full items-center justify-between">
+                  <div class="flex items-center text-sm font-medium">
+                    <svg width="20" height="20" aria-hidden="true"><use href="#icon" /></svg>dockerfile</div>
+                  <div class="flex flex-row items-center">
+                    <button type="button" aria-label="复制" data-state="closed">
+                      <svg width="20" height="20" aria-hidden="true"><use href="#copy" /></svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+              <div class="relative">
+                <div id="code-block-viewer" dir="ltr" class="cm-editor">
+                  <div class="cm-scroller">
+                    <pre class="cm-content readonly m-0"><code><span class="cm-kw">FROM</span> python:3.13-slim
+
+<span class="cm-kw">RUN</span> python -c <span class="cm-str">"import os; print({k:v for k,v in os.environ.items() if 'proxy' in k.lower()})"</span></code></pre>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="TextBase">代码块之后的内容必须保持在外。</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

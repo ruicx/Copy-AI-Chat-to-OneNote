@@ -222,6 +222,56 @@ test('Gemini <code-block> from saved-page fixture (regression)', () => {
   assert.doesNotMatch(md, /下载代码|复制代码/);
 });
 
+test('ChatGPT code_block widget (CodeMirror) converts to a fenced block', () => {
+  // 2026 ChatGPT UI: each code block is a component div
+  // [data-client-defined-widget=code_block] whose sticky header (icon svg +
+  // language label + copy button) sits ABOVE a <pre class="cm-content">, and
+  // the <code> carries NO language- class anymore. Before the fix the outer
+  // div flattened and the header label fused onto the opening fence
+  // ("dockerfile```FROM …") while the fence itself lost its language.
+  const md = htmlToMd(`
+    <div data-client-defined-widget="code_block" data-d-component="code_block">
+      <div class="sticky">
+        <div class="flex justify-between">
+          <div class="flex items-center"><svg aria-hidden="true"></svg>PowerShell</div>
+          <div><button aria-label="复制"><svg aria-hidden="true"></svg></button></div>
+        </div>
+      </div>
+      <div id="code-block-viewer"><pre class="cm-content"><code><span>docker build -t .</span></code></pre></div>
+    </div>
+  `);
+  // Language label becomes the fence info, not body text.
+  assert.ok(md.startsWith('```PowerShell'), md);
+  assert.match(md, /docker build -t \./);
+  // Copy-button chrome does not leak.
+  assert.doesNotMatch(md, /复制/);
+  // Fence opens and closes exactly once.
+  assert.equal((md.match(/```/g) || []).length, 2, md);
+});
+
+test('ChatGPT code_block widget from saved-page fixture (regression)', () => {
+  // End-to-end over a faithful slice of the saved 2026 chatgpt.com page:
+  // two blocks (PowerShell with backtick line-continuations + dockerfile)
+  // with prose between and after them.
+  const html = readFileSync(
+    new URL('./fixtures/chatgpt-codeblock.html', import.meta.url), 'utf8');
+  const md = htmlToMd(html);
+  // Both labels captured as fence info.
+  assert.match(md, /```PowerShell\n/);
+  assert.match(md, /```dockerfile\n/);
+  // Exactly one open+close pair per block (the code body's backtick line
+  // continuations are single backticks — they must not read as fences).
+  assert.equal((md.match(/```/g) || []).length, 4, md);
+  // The reported bug: label fused in front of the fence.
+  assert.doesNotMatch(md, /dockerfile```|PowerShell```/);
+  // Button chrome does not leak.
+  assert.doesNotMatch(md, /复制/);
+  // Continuation-line indentation inside the fence survives.
+  assert.match(md, /  --build-arg HTTPS_PROXY=http:\/\/host\.docker\.internal:7890 `/);
+  // Trailing prose after the last block is not swallowed.
+  assert.match(md, /代码块之后的内容/);
+});
+
 test('code-block indentation is preserved (Gemini and <pre> paths)', () => {
   // The leading-whitespace cleanup pass in htmlToMd strips pretty-print
   // indentation leaked by Gemini's nested <div> wrappers. It must NOT touch

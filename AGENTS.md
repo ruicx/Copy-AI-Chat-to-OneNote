@@ -252,6 +252,43 @@ site's blossom `<svg>` (found via `use[href="#blossom"]`) and
 is settle-based — zero DOM writes once the swap is in place — so the
 MutationObserver never re-triggers itself.
 
+**ChatGPT 2026 UI notes:**
+- *Logo swap:* the expanded sidebar header has no icon element — the 主页
+  link holds only an (empty) `.header-wordmark` span, so the text-only clone
+  matches the native look; the maintainer deliberately wants NO icon inlined
+  there. The `#blossom` svg exists solely inside the collapsed rail's
+  "打开侧边栏" button (invisible while the sidebar is expanded). Fixture:
+  `test/fixtures/chatgpt-logo.html`.
+- *FAB host:* `createShadowRoot()` in `src/ui.js` appends the host under
+  `<body>`, never `<html>` — a stray div directly under `<html>` gets wiped
+  by the site's cleanup passes some time after boot, which made the FAB
+  disappear entirely (per-message buttons survive because they live inside
+  the message tree). `keepHostAttached()` re-appends the host if anything
+  detaches it.
+
+### ChatGPT code blocks: the CodeMirror widget (2026 UI)
+
+ChatGPT no longer renders code as `<pre><code class="language-…">`. Each block
+(assistant AND user messages) is a component div marked
+`data-client-defined-widget="code_block"` (mirrored by
+`data-d-component="code_block"`) whose **sticky header — icon `<svg>` +
+language label as plain text + a copy `<button>` (aria-label only, no text) —
+sits ABOVE** a CodeMirror `<pre class="cm-content"><code>…</code></pre>` that
+carries **no `language-` class**. These are ordinary divs, so a switch case can
+never fire; the converter intercepts them upstream
+(`isCodeBlockWidget()` / `codeBlockWidgetToMd()` in `src/converter.js` — same
+pattern as the Gemini math intercept). Without the intercept the outer div
+flattens and the header label fuses onto the opening fence (the label glued
+directly in front of the `` ` `` marks, e.g. `` dockerfile```FROM … ``) — the
+exact regression to watch for if this breaks again. Language recovery is
+clone-and-strip: remove `pre`/`button`/`svg` from a
+clone; the remaining trimmed text is the label, used as fence info only if it
+matches `/^[\w+#.-]{1,24}$/` (labels arrive capitalized, e.g. `PowerShell`;
+`highlightToHtml` lowercases before the hljs lookup). Regression fixtures:
+`test/fixtures/chatgpt-codeblock.html` (also documents that the assistant
+content root is now `.puik-root not-prose not-markdown` — the adapter's
+`[class*="markdown"]` substring fallback resolves to it; `.markdown` is gone).
+
 ## Build & test
 
 ```bash

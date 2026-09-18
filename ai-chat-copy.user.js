@@ -2194,6 +2194,32 @@
   function escapeTableCell(text2) {
     return String(text2).replace(/\r\n/g, "\n").replace(/\n/g, " ").replace(/\|/g, "\\|").trim();
   }
+  var CODE_BLOCK_WIDGET_ATTRS = ["data-client-defined-widget", "data-d-component"];
+  function isCodeBlockWidget(node) {
+    if (!node.getAttribute) return false;
+    for (const attr of CODE_BLOCK_WIDGET_ATTRS) {
+      if (node.getAttribute(attr) === "code_block") return true;
+    }
+    return false;
+  }
+  function codeBlockWidgetToMd(node) {
+    const pre = node.querySelector("pre");
+    const codeEl = node.querySelector("code");
+    const source = codeEl || pre || node;
+    const raw = source.textContent.replace(/\n$/, "");
+    let lang = "";
+    if (codeEl) {
+      const m = (codeEl.className || "").match(/language-([\w-]+)/);
+      if (m) lang = m[1];
+    }
+    if (!lang && (pre || codeEl)) {
+      const clone = node.cloneNode(true);
+      for (const el of clone.querySelectorAll("pre, button, svg")) el.remove();
+      const label = (clone.textContent || "").replace(/\s+/g, " ").trim();
+      if (/^[\w+#.-]{1,24}$/.test(label)) lang = label;
+    }
+    return "```" + lang + "\n" + raw + "\n```\n\n";
+  }
   function nodeToMd(node, ctx) {
     if (!node) return "";
     const nt = node.nodeType;
@@ -2212,6 +2238,7 @@ $$${mathTex}$$
 
 ` : `$${mathTex}$`;
     }
+    if (isCodeBlockWidget(node)) return codeBlockWidgetToMd(node);
     if (tag2 in INLINE) {
       const inner2 = childrenToMd(node, ctx);
       const wrap = INLINE[tag2];
@@ -24665,6 +24692,9 @@ ${DIVIDER}
     }
     return svg;
   }
+  function hostParent() {
+    return document.body || document.documentElement;
+  }
   function createShadowRoot() {
     const host = document.createElement("div");
     host.id = "ai-copy-host";
@@ -24672,8 +24702,16 @@ ${DIVIDER}
     const style = document.createElement("style");
     style.textContent = STYLES;
     shadow.appendChild(style);
-    document.documentElement.appendChild(host);
+    hostParent().appendChild(host);
+    keepHostAttached(host);
     return shadow;
+  }
+  function keepHostAttached(host) {
+    if (typeof MutationObserver === "undefined") return;
+    const obs = new MutationObserver(() => {
+      if (!host.isConnected) hostParent().appendChild(host);
+    });
+    obs.observe(document.documentElement, { childList: true, subtree: true });
   }
   function toast(shadow, message, ms = 1800) {
     const el = document.createElement("div");
@@ -24918,6 +24956,7 @@ ${DIVIDER}
         btn.type = "button";
         btn.removeAttribute("aria-label");
         btn.removeAttribute("data-test-id");
+        btn.removeAttribute("data-testid");
         btn.removeAttribute("id");
         btn.textContent = "";
         const iconWrap = document.createElement("span");

@@ -129,6 +129,16 @@ function makeFabIcon(kind = 'copy') {
   return svg;
 }
 
+/** Where the FAB host lives. Must be <body>, NOT <html>: a stray div directly
+ *  under <html> sits outside the parser's expected content, and site cleanup
+ *  passes remove it — ChatGPT's 2026 UI wipes the FAB entirely some time
+ *  after boot (the per-message buttons survive because they live inside the
+ *  message tree), which is the "悬浮球不见了" bug. Trailing <body> children
+ *  are left alone by every framework we support. */
+function hostParent() {
+  return document.body || document.documentElement;
+}
+
 function createShadowRoot() {
   const host = document.createElement('div');
   host.id = 'ai-copy-host';
@@ -136,8 +146,20 @@ function createShadowRoot() {
   const style = document.createElement('style');
   style.textContent = STYLES;
   shadow.appendChild(style);
-  document.documentElement.appendChild(host);
+  hostParent().appendChild(host);
+  keepHostAttached(host);
   return shadow;
+}
+
+/** Watchdog: some SPAs remove stray nodes long after boot. If anything
+ *  detaches the host, re-append it. The check is one isConnected read, so
+ *  the observer is inert while the host stays attached. */
+function keepHostAttached(host) {
+  if (typeof MutationObserver === 'undefined') return;
+  const obs = new MutationObserver(() => {
+    if (!host.isConnected) hostParent().appendChild(host);
+  });
+  obs.observe(document.documentElement, { childList: true, subtree: true });
 }
 
 function toast(shadow, message, ms = 1800) {
@@ -472,6 +494,9 @@ function mountNativeToolbarButtons(adapter, hostShadow, copyOne, copyTurn) {
       btn.type = 'button';
       btn.removeAttribute('aria-label');
       btn.removeAttribute('data-test-id');
+      // ChatGPT spells it data-testid (no dash); a leftover testid would make
+      // our cloned button look like the site's own to any testid-based lookup.
+      btn.removeAttribute('data-testid');
       btn.removeAttribute('id');
       btn.textContent = '';
       const iconWrap = document.createElement('span');
