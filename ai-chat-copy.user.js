@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI 对话一键复制到 OneNote
 // @namespace    https://github.com/ruicx/Copy-AI-Chat-to-OneNote
-// @version      0.3.0
+// @version      0.4.1
 // @description  Copy AI Chat (ChatGPT/Gemini/Claude/DeepSeek/Kimi/Doubao) content to OneNote with a single click. Support Markdown, code blocks, and images. Copy the entire conversation or just the latest message. Compatible with Tampermonkey and Violentmonkey.
 // @author       ruicx
 // @match        https://gemini.google.com/*
@@ -2043,6 +2043,31 @@
     settingsCodeFontReset: {
       zh: "\u2713 \u4EE3\u7801\u5B57\u4F53\u5DF2\u6062\u590D\u9ED8\u8BA4",
       en: "\u2713 Code font reset to default"
+    },
+    // Logo-swap button tooltip (next to the gear on the FAB).
+    settingsLogoTitle: {
+      zh: "\u5207\u6362\u7AD9\u70B9 Logo\uFF08Kimi / DeepSeek\uFF09",
+      en: "Swap site logo (Kimi / DeepSeek)"
+    },
+    // Prompt asking which brand the top-left site logo should become.
+    settingsLogoPrompt: {
+      zh: "\u5207\u6362\u5DE6\u4E0A\u89D2\u7AD9\u70B9 Logo \u2014\u2014 \u8F93\u5165 kimi \u6216 deepseek\uFF08\u7559\u7A7A\u6062\u590D\u9ED8\u8BA4\uFF09\uFF1A",
+      en: "Swap the top-left site logo \u2014 enter kimi or deepseek (leave empty to restore default):"
+    },
+    // Toast after switching the site logo. {name} → the chosen brand name.
+    settingsLogoSaved: {
+      zh: "\u2713 Logo \u5DF2\u5207\u6362\u4E3A {name}",
+      en: "\u2713 Logo switched to {name}"
+    },
+    // Toast after clearing the logo back to the site's own.
+    settingsLogoReset: {
+      zh: "\u2713 Logo \u5DF2\u6062\u590D\u9ED8\u8BA4",
+      en: "\u2713 Logo restored to default"
+    },
+    // Toast when the prompt input is not one of the known brands.
+    settingsLogoInvalid: {
+      zh: "\u2717 \u65E0\u6CD5\u8BC6\u522B\u7684 Logo\uFF0C\u53EF\u9009\uFF1Akimi\u3001deepseek",
+      en: "\u2717 Unknown logo \u2014 choose kimi or deepseek"
     }
   };
   function t(key, vars) {
@@ -24318,6 +24343,202 @@ ${DIVIDER}
     return { method: "execcommand" };
   }
 
+  // src/logo.js
+  var LOGO_KEY = "ai-copy-logo";
+  var SWAP_ATTR = "data-ai-copy-logo";
+  var ORIG_ATTR = "data-ai-copy-orig";
+  var KIMI_PATH = "M21.765.351C22.998.351 24 1.353 24 2.586S22.998 4.82 21.765 4.82h-1.974c-.15 0-.26-.12-.26-.26V2.586A2.237 2.237 0 0 1 21.765.35M9.41 13.388l8.447-8.377c.16-.16.07-.471-.14-.471h-4.55s-.1.02-.14.06l-9.099 9.029c-.14.14-.35.02-.35-.21V4.81c0-.15-.1-.27-.221-.27H.22c-.12 0-.22.12-.22.27v18.57c0 .15.1.27.22.27h3.137c.12 0 .22-.12.22-.27v-3.79c0-.08.03-.16.08-.21l2.826-2.796c.07-.07.16-.08.241-.03l7.546 5.551a8.9 8.9 0 0 0 4.018 1.493c.12.01.23-.11.23-.27V19.76c0-.14-.08-.25-.19-.26a5.8 5.8 0 0 1-2.355-.942l-6.533-4.73c-.14-.09-.15-.32-.03-.441";
+  var DEEPSEEK_PATH = "M23.748 4.651c-.254-.124-.364.113-.512.233-.051.04-.094.09-.137.137-.372.397-.806.657-1.373.626-.829-.046-1.537.214-2.163.848-.133-.782-.575-1.248-1.247-1.548-.352-.155-.708-.311-.955-.65-.172-.24-.219-.509-.305-.774-.055-.16-.11-.323-.293-.35-.2-.031-.278.136-.356.276-.313.572-.434 1.202-.422 1.84.027 1.436.633 2.58 1.838 3.393.137.094.172.187.129.323-.082.28-.18.553-.266.833-.055.179-.137.218-.328.14a5.5 5.5 0 0 1-1.737-1.179c-.857-.828-1.631-1.743-2.597-2.46a12 12 0 0 0-.689-.47c-.985-.957.13-1.743.387-1.836.27-.098.094-.433-.778-.428-.872.003-1.67.295-2.687.685a3 3 0 0 1-.465.136 9.6 9.6 0 0 0-2.883-.101c-1.885.21-3.39 1.1-4.497 2.622C.082 8.776-.231 10.854.152 13.02c.403 2.284 1.568 4.175 3.36 5.653 1.857 1.533 3.997 2.284 6.438 2.14 1.482-.085 3.132-.284 4.994-1.86.47.234.962.328 1.78.398.629.058 1.235-.031 1.705-.129.735-.155.684-.836.418-.961-2.155-1.004-1.682-.595-2.112-.926 1.095-1.295 2.768-3.598 3.284-6.733.05-.346.115-.834.108-1.114-.004-.171.035-.238.23-.257a4.2 4.2 0 0 0 1.545-.475c1.397-.763 1.96-2.016 2.093-3.517.02-.23-.004-.467-.247-.588M11.58 18.168c-2.088-1.642-3.101-2.183-3.52-2.16-.39.024-.32.472-.234.763.09.288.207.487.371.74.114.167.192.416-.113.603-.673.416-1.842-.14-1.897-.168-1.361-.801-2.5-1.86-3.301-3.306-.775-1.393-1.225-2.888-1.299-4.482-.02-.385.094-.522.477-.592a4.7 4.7 0 0 1 1.53-.038c2.131.311 3.946 1.264 5.467 2.774.868.86 1.525 1.887 2.202 2.89.72 1.066 1.494 2.082 2.48 2.915.348.291.626.513.892.677-.802.09-2.14.109-3.055-.615zm1.001-6.44a.306.306 0 0 1 .415-.287.3.3 0 0 1 .113.074.3.3 0 0 1 .086.214c0 .17-.136.307-.308.307a.303.303 0 0 1-.306-.307m3.11 1.596c-.2.081-.4.151-.591.16a1.25 1.25 0 0 1-.798-.254c-.274-.23-.47-.358-.551-.758a1.7 1.7 0 0 1 .015-.588c.07-.327-.007-.537-.238-.727-.188-.156-.426-.199-.689-.199a.6.6 0 0 1-.254-.078.253.253 0 0 1-.114-.358 1 1 0 0 1 .192-.21c.356-.202.767-.136 1.146.016.352.144.618.408 1.001.782.392.451.462.576.685.915.176.264.336.536.446.848.066.194-.02.353-.25.45";
+  var DEEPSEEK_BLUE = "#5786FE";
+  var KIMI_DARK = "#111111";
+  var KIMI_LIGHT = "#f3f4f6";
+  function svgDataUri(path, fill, darkFill) {
+    const style = darkFill ? `<style>@media (prefers-color-scheme:dark){path{fill:${darkFill}}}</style>` : "";
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">${style}<path fill="${fill}" d="${path}"/></svg>`;
+    return "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg);
+  }
+  var BRANDS = {
+    kimi: {
+      name: "Kimi",
+      path: KIMI_PATH,
+      inlineFill: "currentColor",
+      imgUri: svgDataUri(KIMI_PATH, KIMI_DARK, KIMI_LIGHT)
+    },
+    deepseek: {
+      name: "DeepSeek",
+      path: DEEPSEEK_PATH,
+      inlineFill: DEEPSEEK_BLUE,
+      imgUri: svgDataUri(DEEPSEEK_PATH, DEEPSEEK_BLUE)
+    }
+  };
+  var originals = /* @__PURE__ */ new WeakMap();
+  function rememberOriginal(el, snapshot) {
+    if (!originals.has(el)) originals.set(el, snapshot);
+  }
+  function swapGemini(doc, choice, brand) {
+    const img = doc.querySelector("img.sparkle-image");
+    if (img && img.getAttribute(SWAP_ATTR) !== choice) {
+      rememberOriginal(img, { src: img.getAttribute("src") || "" });
+      img.setAttribute("src", brand.imgUri);
+      img.setAttribute(SWAP_ATTR, choice);
+    }
+    const wmClone = doc.querySelector(`.gemini-sidenav-text[${SWAP_ATTR}]`);
+    const wordmark = findOriginal(
+      doc,
+      ".side-nav-sparkle-button .gemini-sidenav-text",
+      (el) => el
+    );
+    if (wordmark) ensureClone(doc, wordmark, wmClone, choice, brand);
+    else if (wmClone) wmClone.remove();
+  }
+  function rewriteClone(clone, choice, brand) {
+    if (clone.localName === "svg") {
+      while (clone.firstChild) clone.firstChild.remove();
+      const path = clone.ownerDocument.createElementNS("http://www.w3.org/2000/svg", "path");
+      path.setAttribute("d", brand.path);
+      path.setAttribute("fill", brand.inlineFill);
+      clone.appendChild(path);
+    } else {
+      clone.textContent = brand.name;
+    }
+    clone.setAttribute(SWAP_ATTR, choice);
+  }
+  function brandClone(orig, choice, brand) {
+    const clone = orig.cloneNode(false);
+    clone.removeAttribute(ORIG_ATTR);
+    clone.style.display = "";
+    rewriteClone(clone, choice, brand);
+    return clone;
+  }
+  function findOriginal(doc, selector, pick) {
+    const els = [...doc.querySelectorAll(selector)].map(pick).filter((el) => el && !el.hasAttribute(SWAP_ATTR));
+    return els.find((el) => el.hasAttribute(ORIG_ATTR)) || els.find((el) => el.style.display !== "none");
+  }
+  function ensureClone(doc, orig, existingClone, choice, brand) {
+    if (!orig.hasAttribute(ORIG_ATTR)) {
+      rememberOriginal(orig, { display: orig.style.display || "" });
+      orig.style.display = "none";
+      orig.setAttribute(ORIG_ATTR, "1");
+    }
+    if (existingClone && orig.nextElementSibling === existingClone) {
+      if (existingClone.getAttribute("class") !== orig.getAttribute("class")) {
+        existingClone.remove();
+        orig.insertAdjacentElement("afterend", brandClone(orig, choice, brand));
+      } else if (existingClone.getAttribute(SWAP_ATTR) !== choice) {
+        rewriteClone(existingClone, choice, brand);
+      }
+      return;
+    }
+    if (existingClone) existingClone.remove();
+    orig.insertAdjacentElement("afterend", brandClone(orig, choice, brand));
+  }
+  function swapChatGPT(doc, choice, brand) {
+    const svgClone = doc.querySelector(`svg[${SWAP_ATTR}]`);
+    const blossom = findOriginal(doc, 'use[href="#blossom"]', (use2) => use2.closest("svg"));
+    if (blossom) ensureClone(doc, blossom, svgClone, choice, brand);
+    else if (svgClone) svgClone.remove();
+    const wmClone = doc.querySelector(`.header-wordmark[${SWAP_ATTR}]`);
+    const wordmark = findOriginal(doc, ".header-wordmark", (el) => el);
+    if (wordmark) ensureClone(doc, wordmark, wmClone, choice, brand);
+    else if (wmClone) wmClone.remove();
+  }
+  function applyLogo(doc, hostname, choice) {
+    const brand = BRANDS[choice];
+    if (!brand) return;
+    const host = (hostname || "").toLowerCase();
+    const on = (h) => host === h || host.endsWith("." + h);
+    if (on("gemini.google.com")) swapGemini(doc, choice, brand);
+    else if (on("chatgpt.com") || on("chat.openai.com")) swapChatGPT(doc, choice, brand);
+  }
+  function readLogoSetting() {
+    try {
+      const v = (localStorage.getItem(LOGO_KEY) || "").trim().toLowerCase();
+      return BRANDS[v] ? v : "";
+    } catch (_) {
+      return "";
+    }
+  }
+  var observer = null;
+  var debounceTimer = 0;
+  function ensureObserver() {
+    if (observer || typeof MutationObserver === "undefined" || !document.body) return;
+    observer = new MutationObserver(() => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(applyLogoSwap, 200);
+    });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["class", "style"]
+    });
+  }
+  function stopObserver() {
+    if (observer) {
+      observer.disconnect();
+      observer = null;
+    }
+    clearTimeout(debounceTimer);
+  }
+  function applyLogoSwap() {
+    const choice = readLogoSetting();
+    if (!choice) return;
+    ensureObserver();
+    applyLogo(document, typeof location !== "undefined" ? location.hostname : "", choice);
+  }
+  function restoreLogos(doc) {
+    doc.querySelectorAll(`[${SWAP_ATTR}], [${ORIG_ATTR}]`).forEach((el) => {
+      const orig = originals.get(el);
+      if (el.hasAttribute(ORIG_ATTR)) {
+        el.style.display = orig && orig.display || "";
+        el.removeAttribute(ORIG_ATTR);
+        originals.delete(el);
+      } else if (orig && orig.src !== void 0) {
+        el.setAttribute("src", orig.src);
+        el.removeAttribute(SWAP_ATTR);
+        originals.delete(el);
+      } else {
+        el.remove();
+      }
+    });
+  }
+  function clearLogoSetting(doc = document) {
+    stopObserver();
+    restoreLogos(doc);
+  }
+  function promptLogoChoice(shadow, toastFn) {
+    const current = readLogoSetting();
+    let value;
+    try {
+      value = prompt(t("settingsLogoPrompt"), current);
+    } catch (_) {
+      toastFn(shadow, t("toastFail", { err: "prompt blocked" }), 2200);
+      return;
+    }
+    if (value === null) return;
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) {
+      try {
+        localStorage.removeItem(LOGO_KEY);
+      } catch (_) {
+      }
+      clearLogoSetting();
+      toastFn(shadow, t("settingsLogoReset"));
+      return;
+    }
+    if (!BRANDS[trimmed]) {
+      toastFn(shadow, t("settingsLogoInvalid"), 2200);
+      return;
+    }
+    try {
+      localStorage.setItem(LOGO_KEY, trimmed);
+      applyLogoSwap();
+      toastFn(shadow, t("settingsLogoSaved", { name: BRANDS[trimmed].name }));
+    } catch (err) {
+      toastFn(shadow, t("toastFail", { err: err && err.message || err }), 3e3);
+    }
+  }
+
   // src/ui.js
   var STYLES = `
   :host { all: initial; }
@@ -24337,48 +24558,57 @@ ${DIVIDER}
   .fab[disabled] { opacity: .55; cursor: not-allowed; }
   .fab.dragging { transition: none; cursor: grabbing; opacity: .9; }
 
-  /* Settings (gear) button \u2014 a child of the FAB. The gear VISUALLY sits to the
-     left of the FAB, but its box OVERLAPS the FAB's left edge. This overlap is
-     deliberate and essential: there must be no dead space between the FAB's
-     hover area and the gear's, otherwise moving the cursor from the FAB toward
-     the gear crosses empty page and the gear vanishes before the click lands.
-     The visible gap on screen comes from transparent padding inside the gear
-     button, which keeps the hover chain unbroken. It follows the FAB on drag
-     automatically (it's an absolute child of the fixed FAB).
+  /* Settings tools (gear + logo swap) \u2014 children of the FAB. The cluster
+     VISUALLY sits to the left of the FAB, but its box OVERLAPS the FAB's
+     left edge. This overlap is deliberate and essential: there must be no
+     dead space between the FAB's hover area and the cluster's, otherwise
+     moving the cursor from the FAB toward the buttons crosses empty page and
+     they vanish before the click lands. The visible gap on screen comes from
+     transparent padding inside the cluster, which keeps the hover chain
+     unbroken. It follows the FAB on drag automatically (it's an absolute
+     child of the fixed FAB).
 
-     Geometry (FAB is 52px wide): gear box width 44 + right offset 46 places
-     its right edge 6px inside the FAB (so boxes overlap by 6px) while its left
-     edge sticks 38px out past the FAB's left edge \u2014 exactly where the round
-     icon (38px, in 6px right padding) visually sits. */
-  .fab.settings {
-    position: absolute; top: 7px; right: 46px;
-    width: 44px; height: 38px;
-    padding: 0 6px 0 0; /* transparent spacer: keeps visible gap, box overlaps */
-    background: transparent; border: none; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
+     Geometry (FAB is 52px wide): cluster box width 44 + right offset 46
+     places its right edge 6px inside the FAB (so the boxes overlap by 6px)
+     while its left edge sticks 38px out past the FAB's left edge \u2014 exactly
+     where the round icons (38px, in 6px right padding) visually sit. The
+     cluster is vertically centered on the FAB and tall enough (two 38px
+     buttons + gap) that a cursor travelling from anywhere in the FAB's left
+     half to a button stays inside the cluster until it lands. */
+  .fab.tools {
+    position: absolute; top: 50%; right: 46px; bottom: auto;
+      /* bottom:auto: the .fab base sets bottom:24px, which together with
+         top:50% would clamp this cluster to a 2px strip and squash it */
+    width: 44px; height: auto; padding: 0 6px 0 0; /* height/auto + no shadow:
+      undo the .fab base chrome (52px box + drop shadow) this div inherits */
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    background: transparent; border: none; box-shadow: none; cursor: default;
     user-select: none; opacity: 0; pointer-events: none;
-    transform: translateX(6px);
+    transform: translateY(-50%) translateX(6px);
     transition: opacity .12s ease, transform .12s ease;
   }
-  .fab.settings .gear-icon {
-    width: 38px; height: 38px; border-radius: 50%;
-    background: #202624; color: #fff; font-size: 18px;
-    display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 3px 10px rgba(20,30,25,.18);
+  .fab.tool {
+    position: static; /* undo the .fab base's position:fixed/right/bottom \u2014
+                         the buttons must be in-flow children of the cluster */
+    width: 38px; height: 38px; border-radius: 50%; padding: 0;
+    background: #202624; color: #fff; border: none; cursor: pointer;
+    font-size: 18px; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 3px 10px rgba(20,30,25,.18), inset 0 1px 0 rgba(255,255,255,.12);
     transition: background .12s ease, transform .12s ease;
   }
-  .fab.settings:hover .gear-icon,
-  .fab.settings:focus-visible .gear-icon { background: #343f39; }
-  .gear-icon svg { width: 19px; height: 19px; pointer-events: none; }
-  /* Reveal while the FAB OR the gear itself is hovered \u2014 the overlapping box
-     guarantees the cursor never leaves hover coverage in between. */
-  .fab:hover .fab.settings,
-  .fab.settings:hover,
-  .fab.settings:focus-within {
+  .fab.tool:hover { background: #343f39; transform: scale(1.06); }
+  .fab.tool:active { transform: scale(.96); }
+  .fab.tool:focus-visible { outline: 2px solid #6b8577; outline-offset: 3px; }
+  .fab.tool svg { width: 19px; height: 19px; pointer-events: none; }
+  /* Reveal while the FAB OR the cluster itself is hovered \u2014 the overlapping
+     box guarantees the cursor never leaves hover coverage in between. */
+  .fab:hover .fab.tools,
+  .fab.tools:hover,
+  .fab.tools:focus-within {
     opacity: 1; pointer-events: auto;
-    transform: translateX(0);
+    transform: translateY(-50%) translateX(0);
   }
-  .fab.dragging .fab.settings { opacity: 0 !important; pointer-events: none; }
+  .fab.dragging .fab.tools { opacity: 0 !important; pointer-events: none; }
 
   .copy-btn {
     background: transparent; border: 1px solid #d1d5db; border-radius: 6px;
@@ -24396,7 +24626,26 @@ ${DIVIDER}
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(-4px); }
 `;
-  function makeFabIcon(settings = false) {
+  var FAB_ICONS = {
+    // Copy: two overlapping rounded squares + a checkmark.
+    copy: [
+      "M8 8V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-3",
+      "M5 8h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Z",
+      "m7 14 2 2 4-4"
+    ],
+    // Gear (code-font setting).
+    gear: [
+      "M9.5 3.5h5l.6 2.4 2 .9 2.2-.7 2.5 4.3-1.7 1.7v2.3l1.7 1.7-2.5 4.3-2.2-.7-2 .9-.6 2.4h-5l-.6-2.4-2-.9-2.2.7-2.5-4.3 1.7-1.7v-2.3l-1.7-1.7 2.5-4.3 2.2.7 2-.9Z",
+      "M15.5 13.25a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0"
+    ],
+    // Paint swatch (logo-swap setting) — heroicons "swatch", outline.
+    swatch: [
+      "M4.098 19.902a3.75 3.75 0 0 0 5.304 0l6.401-6.402M6.75 21A3.75 3.75 0 0 1 3 17.25V4.125C3 3.504 3.504 3 4.125 3h5.25c.621 0 1.125.504 1.125 1.125v4.072M6.75 21a3.75 3.75 0 0 0 3.75-3.75V8.197M6.75 21h13.125c.621 0 1.125-.504 1.125-1.125v-5.25c0-.621-.504-1.125-1.125-1.125h-4.072M10.5 8.197l2.88-2.88c.438-.439 1.15-.439 1.59 0l3.712 3.713c.44.44.44 1.152 0 1.59l-2.879 2.88",
+      "M6.75 17.25h.008v.008H6.75v-.008Z"
+    ]
+  };
+  function makeFabIcon(kind = "copy") {
+    if (kind === true) kind = "gear";
     const ns = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(ns, "svg");
     for (const [key, value] of Object.entries({
@@ -24409,15 +24658,7 @@ ${DIVIDER}
       "aria-hidden": "true",
       focusable: "false"
     })) svg.setAttribute(key, value);
-    const paths = settings ? [
-      "M9.5 3.5h5l.6 2.4 2 .9 2.2-.7 2.5 4.3-1.7 1.7v2.3l1.7 1.7-2.5 4.3-2.2-.7-2 .9-.6 2.4h-5l-.6-2.4-2-.9-2.2.7-2.5-4.3 1.7-1.7v-2.3l-1.7-1.7 2.5-4.3 2.2.7 2-.9Z",
-      "M15.5 13.25a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0"
-    ] : [
-      "M8 8V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-3",
-      "M5 8h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Z",
-      "m7 14 2 2 4-4"
-    ];
-    for (const d of paths) {
+    for (const d of FAB_ICONS[kind] || FAB_ICONS.copy) {
       const path = document.createElementNS(ns, "path");
       path.setAttribute("d", d);
       svg.appendChild(path);
@@ -24584,21 +24825,26 @@ ${DIVIDER}
         fab.disabled = false;
       }
     });
-    const gear = document.createElement("button");
-    gear.className = "fab settings";
-    gear.type = "button";
-    gear.title = t("settingsTitle");
-    gear.setAttribute("aria-label", t("settingsTitle"));
-    const gearIcon = document.createElement("span");
-    gearIcon.className = "gear-icon";
-    gearIcon.appendChild(makeFabIcon(true));
-    gear.appendChild(gearIcon);
-    gear.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      promptCodeFont(shadow);
-    });
-    fab.appendChild(gear);
+    const tools = document.createElement("div");
+    tools.className = "fab tools";
+    const makeTool = (icon, title, onClick) => {
+      const btn = document.createElement("button");
+      btn.className = "fab tool";
+      btn.type = "button";
+      btn.title = title;
+      btn.setAttribute("aria-label", title);
+      btn.appendChild(makeFabIcon(icon));
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onClick();
+      });
+      tools.appendChild(btn);
+      return btn;
+    };
+    makeTool("gear", t("settingsTitle"), () => promptCodeFont(shadow));
+    makeTool("swatch", t("settingsLogoTitle"), () => promptLogoChoice(shadow, toast));
+    fab.appendChild(tools);
     shadow.appendChild(fab);
     applySavedPosition(fab);
     makeDraggable(fab);
@@ -24782,6 +25028,7 @@ ${DIVIDER}
     console.log(`[ai-copy] active on ${adapter.name}`);
     mountFloatingButton(adapter);
     mountPerMessageButtons(adapter);
+    applyLogoSwap();
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", boot, { once: true });

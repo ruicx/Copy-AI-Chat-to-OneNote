@@ -41,7 +41,8 @@ across platforms. Do not "optimise" by short-circuiting this pipeline.
 | `src/pipeline.js` | Orchestration: `renderMessage`, `renderConversation`, `renderTurn`, `findTurnIndex`. Adds role badges + dividers at the HTML layer. |
 | `src/clipboard.js` | **Stage 3.** `copyForOneNote(html, text)` — `ClipboardItem` write with `execCommand` fallback. |
 | `src/i18n.js` | Bilingual string table (zh/en) + `t(key, vars)`. Locale detected once from `navigator.language` (`zh*` → zh, else en). |
-| `src/ui.js` | FAB (with a hover-revealed gear button for settings), per-message buttons, native-toolbar injection, toast. All in a Shadow DOM. |
+| `src/ui.js` | FAB (with a hover-revealed tool cluster: gear = code font, swatch = site logo), per-message buttons, native-toolbar injection, toast. All in a Shadow DOM. |
+| `src/logo.js` | Optional site-logo swap (`ai-copy-logo` setting): replaces Gemini's sparkle `<img>` / ChatGPT's blossom + wordmark with the Kimi or DeepSeek mark (embedded simple-icons paths, self-contained). Unset = zero DOM writes. Runs at boot + a debounced MutationObserver (SPA re-renders). |
 | `src/platforms/base.js` | Adapter contract + `queryFirst` / `queryAll` fallback helpers. |
 | `src/platforms/*.js` | One adapter per platform. ChatGPT & Gemini are calibrated; the rest are heuristic fallbacks. |
 | `test/` | Node `node:test` suite. Converter/renderer/pipeline run via linkedom; adapters run against `test/fixtures/*.html`. |
@@ -76,16 +77,22 @@ and what uncalibrated platforms fall back to.
 
 ## Settings & localStorage keys
 
-The FAB carries a hover-revealed **gear button** (a child element, so it
-follows the FAB on drag without separate position-sync). Clicking it opens a
-`prompt()` for the code-block monospace font; the value is read back by
-`getCodeFont()` in `src/renderer.js` and placed first in the code-block
-`font-family` stack (Consolas/Courier/monospace as fallback). Two keys live in
-`localStorage`:
+The FAB carries a hover-revealed **tool cluster** (child elements, so they
+follow the FAB on drag without separate position-sync): a **gear button**
+opening a `prompt()` for the code-block monospace font — the value is read
+back by `getCodeFont()` in `src/renderer.js` and placed first in the
+code-block `font-family` stack (Consolas/Courier/monospace as fallback) —
+and a **swatch button** opening a `prompt()` for the site-logo swap
+(`kimi` / `deepseek` / empty = restore default; applied immediately via
+`applyLogoSwap()` in `src/logo.js`, re-applied on SPA re-renders by a
+debounced MutationObserver). Three keys live in `localStorage`:
 
 - `ai-copy-fab-position` — `{x,y}` of the FAB, saved on drag (`src/ui.js`).
 - `ai-copy-code-font` — user font name; empty/absent → default Consolas
   (`src/ui.js` writes it, `src/renderer.js` reads it).
+- `ai-copy-logo` — `'kimi'` | `'deepseek'`; absent/empty = feature fully
+  inert, the host page is untouched (`src/ui.js` writes it via
+  `promptLogoChoice`, `src/logo.js` reads and applies it).
 
 ## Critical invariants (do not break these)
 
@@ -211,6 +218,14 @@ most fragile part of the codebase. Key things:
   `toolbar.contains(insertAfter)`. User toolbar appends at the **end** (no
   `insertAfter`) so it doesn't land between 复制提示 and 修改提示.
 - `tooltipStyle.position` is `'below'` (Gemini's own tooltips pop down).
+- The logo-swap setting (`src/logo.js`) targets the top-left mark via
+  `img.sparkle-image` inside `<side-nav-sparkle-button>` (src swapped to a
+  data-URI SVG — the site's CSS keeps it sized 22×22, and the embedded SVG
+  carries its own `prefers-color-scheme: dark` fill flip, since an `<img>`
+  can't inherit page colors) and the "Gemini" wordmark
+  (`.gemini-sidenav-text` in the same `<a>`, hide + clone). Angular may
+  re-create these or toggle `.expanded` on sidebar expand — the debounced
+  MutationObserver (childList + class/style attributes) re-syncs.
 
 When Gemini ships a UI refresh and selectors break: see
 [`docs/selector-notes.md`](./docs/selector-notes.md) for the recalibration
@@ -224,6 +239,18 @@ constraint from the maintainer is: **changes for other platforms must not
 affect ChatGPT's UI.** When touching the Gemini path in `ui.js` or
 `platforms/`, verify ChatGPT still goes through the default branch (i.e. your
 code is gated on `adapter.tooltipStyle` / `adapter.makeNativeButton` existing).
+
+The one deliberate exception is the **logo-swap setting** (`src/logo.js`),
+which is opt-in for ChatGPT too: with `ai-copy-logo` unset it writes NOTHING
+to the page. ChatGPT is React-managed — never mutate or remove React-owned
+nodes there (a changed child list can make the reconciler throw
+`NotFoundError`). `swapChatGPT` therefore only sets `style.display` on the
+site's blossom `<svg>` (found via `use[href="#blossom"]`) and
+`.header-wordmark`, and inserts our own clones (same classes, brand content,
+`data-ai-copy-logo` marker) beside them; originals keep a
+`data-ai-copy-orig` marker so `restoreLogos()` can unhide them. Application
+is settle-based — zero DOM writes once the swap is in place — so the
+MutationObserver never re-triggers itself.
 
 ## Build & test
 

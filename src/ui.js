@@ -9,6 +9,7 @@ import { renderMessage, renderConversation, renderTurn, findTurnIndex } from './
 import { copyForOneNote } from './clipboard.js';
 import { t } from './i18n.js';
 import { CODE_FONT_KEY } from './renderer.js';
+import { promptLogoChoice } from './logo.js';
 
 const STYLES = `
   :host { all: initial; }
@@ -28,48 +29,57 @@ const STYLES = `
   .fab[disabled] { opacity: .55; cursor: not-allowed; }
   .fab.dragging { transition: none; cursor: grabbing; opacity: .9; }
 
-  /* Settings (gear) button — a child of the FAB. The gear VISUALLY sits to the
-     left of the FAB, but its box OVERLAPS the FAB's left edge. This overlap is
-     deliberate and essential: there must be no dead space between the FAB's
-     hover area and the gear's, otherwise moving the cursor from the FAB toward
-     the gear crosses empty page and the gear vanishes before the click lands.
-     The visible gap on screen comes from transparent padding inside the gear
-     button, which keeps the hover chain unbroken. It follows the FAB on drag
-     automatically (it's an absolute child of the fixed FAB).
+  /* Settings tools (gear + logo swap) — children of the FAB. The cluster
+     VISUALLY sits to the left of the FAB, but its box OVERLAPS the FAB's
+     left edge. This overlap is deliberate and essential: there must be no
+     dead space between the FAB's hover area and the cluster's, otherwise
+     moving the cursor from the FAB toward the buttons crosses empty page and
+     they vanish before the click lands. The visible gap on screen comes from
+     transparent padding inside the cluster, which keeps the hover chain
+     unbroken. It follows the FAB on drag automatically (it's an absolute
+     child of the fixed FAB).
 
-     Geometry (FAB is 52px wide): gear box width 44 + right offset 46 places
-     its right edge 6px inside the FAB (so boxes overlap by 6px) while its left
-     edge sticks 38px out past the FAB's left edge — exactly where the round
-     icon (38px, in 6px right padding) visually sits. */
-  .fab.settings {
-    position: absolute; top: 7px; right: 46px;
-    width: 44px; height: 38px;
-    padding: 0 6px 0 0; /* transparent spacer: keeps visible gap, box overlaps */
-    background: transparent; border: none; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
+     Geometry (FAB is 52px wide): cluster box width 44 + right offset 46
+     places its right edge 6px inside the FAB (so the boxes overlap by 6px)
+     while its left edge sticks 38px out past the FAB's left edge — exactly
+     where the round icons (38px, in 6px right padding) visually sit. The
+     cluster is vertically centered on the FAB and tall enough (two 38px
+     buttons + gap) that a cursor travelling from anywhere in the FAB's left
+     half to a button stays inside the cluster until it lands. */
+  .fab.tools {
+    position: absolute; top: 50%; right: 46px; bottom: auto;
+      /* bottom:auto: the .fab base sets bottom:24px, which together with
+         top:50% would clamp this cluster to a 2px strip and squash it */
+    width: 44px; height: auto; padding: 0 6px 0 0; /* height/auto + no shadow:
+      undo the .fab base chrome (52px box + drop shadow) this div inherits */
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    background: transparent; border: none; box-shadow: none; cursor: default;
     user-select: none; opacity: 0; pointer-events: none;
-    transform: translateX(6px);
+    transform: translateY(-50%) translateX(6px);
     transition: opacity .12s ease, transform .12s ease;
   }
-  .fab.settings .gear-icon {
-    width: 38px; height: 38px; border-radius: 50%;
-    background: #202624; color: #fff; font-size: 18px;
-    display: flex; align-items: center; justify-content: center;
-    box-shadow: 0 3px 10px rgba(20,30,25,.18);
+  .fab.tool {
+    position: static; /* undo the .fab base's position:fixed/right/bottom —
+                         the buttons must be in-flow children of the cluster */
+    width: 38px; height: 38px; border-radius: 50%; padding: 0;
+    background: #202624; color: #fff; border: none; cursor: pointer;
+    font-size: 18px; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 3px 10px rgba(20,30,25,.18), inset 0 1px 0 rgba(255,255,255,.12);
     transition: background .12s ease, transform .12s ease;
   }
-  .fab.settings:hover .gear-icon,
-  .fab.settings:focus-visible .gear-icon { background: #343f39; }
-  .gear-icon svg { width: 19px; height: 19px; pointer-events: none; }
-  /* Reveal while the FAB OR the gear itself is hovered — the overlapping box
-     guarantees the cursor never leaves hover coverage in between. */
-  .fab:hover .fab.settings,
-  .fab.settings:hover,
-  .fab.settings:focus-within {
+  .fab.tool:hover { background: #343f39; transform: scale(1.06); }
+  .fab.tool:active { transform: scale(.96); }
+  .fab.tool:focus-visible { outline: 2px solid #6b8577; outline-offset: 3px; }
+  .fab.tool svg { width: 19px; height: 19px; pointer-events: none; }
+  /* Reveal while the FAB OR the cluster itself is hovered — the overlapping
+     box guarantees the cursor never leaves hover coverage in between. */
+  .fab:hover .fab.tools,
+  .fab.tools:hover,
+  .fab.tools:focus-within {
     opacity: 1; pointer-events: auto;
-    transform: translateX(0);
+    transform: translateY(-50%) translateX(0);
   }
-  .fab.dragging .fab.settings { opacity: 0 !important; pointer-events: none; }
+  .fab.dragging .fab.tools { opacity: 0 !important; pointer-events: none; }
 
   .copy-btn {
     background: transparent; border: 1px solid #d1d5db; border-radius: 6px;
@@ -89,7 +99,21 @@ const STYLES = `
 `;
 
 // Rounded, monochrome line icons stay crisp at any display scale.
-function makeFabIcon(settings = false) {
+const FAB_ICONS = {
+  // Copy: two overlapping rounded squares + a checkmark.
+  copy: ['M8 8V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-3',
+         'M5 8h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Z',
+         'm7 14 2 2 4-4'],
+  // Gear (code-font setting).
+  gear: ['M9.5 3.5h5l.6 2.4 2 .9 2.2-.7 2.5 4.3-1.7 1.7v2.3l1.7 1.7-2.5 4.3-2.2-.7-2 .9-.6 2.4h-5l-.6-2.4-2-.9-2.2.7-2.5-4.3 1.7-1.7v-2.3l-1.7-1.7 2.5-4.3 2.2.7 2-.9Z',
+         'M15.5 13.25a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0'],
+  // Paint swatch (logo-swap setting) — heroicons "swatch", outline.
+  swatch: ['M4.098 19.902a3.75 3.75 0 0 0 5.304 0l6.401-6.402M6.75 21A3.75 3.75 0 0 1 3 17.25V4.125C3 3.504 3.504 3 4.125 3h5.25c.621 0 1.125.504 1.125 1.125v4.072M6.75 21a3.75 3.75 0 0 0 3.75-3.75V8.197M6.75 21h13.125c.621 0 1.125-.504 1.125-1.125v-5.25c0-.621-.504-1.125-1.125-1.125h-4.072M10.5 8.197l2.88-2.88c.438-.439 1.15-.439 1.59 0l3.712 3.713c.44.44.44 1.152 0 1.59l-2.879 2.88',
+           'M6.75 17.25h.008v.008H6.75v-.008Z'],
+};
+
+function makeFabIcon(kind = 'copy') {
+  if (kind === true) kind = 'gear'; // legacy boolean call sites
   const ns = 'http://www.w3.org/2000/svg';
   const svg = document.createElementNS(ns, 'svg');
   for (const [key, value] of Object.entries({
@@ -97,13 +121,7 @@ function makeFabIcon(settings = false) {
     'stroke-width': '1.7', 'stroke-linecap': 'round', 'stroke-linejoin': 'round',
     'aria-hidden': 'true', focusable: 'false',
   })) svg.setAttribute(key, value);
-  const paths = settings
-    ? ['M9.5 3.5h5l.6 2.4 2 .9 2.2-.7 2.5 4.3-1.7 1.7v2.3l1.7 1.7-2.5 4.3-2.2-.7-2 .9-.6 2.4h-5l-.6-2.4-2-.9-2.2.7-2.5-4.3 1.7-1.7v-2.3l-1.7-1.7 2.5-4.3 2.2.7 2-.9Z',
-       'M15.5 13.25a3.5 3.5 0 1 1-7 0 3.5 3.5 0 0 1 7 0']
-    : ['M8 8V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-3',
-       'M5 8h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-9a2 2 0 0 1 2-2Z',
-       'm7 14 2 2 4-4'];
-  for (const d of paths) {
+  for (const d of FAB_ICONS[kind] || FAB_ICONS.copy) {
     const path = document.createElementNS(ns, 'path');
     path.setAttribute('d', d);
     svg.appendChild(path);
@@ -264,8 +282,9 @@ function promptCodeFont(shadow) {
 
 /**
  * Mount the floating action button. Clicking copies the whole conversation;
- * dragging moves it (position is remembered across page loads). A gear button
- * nested inside the FAB opens the code-font setting (revealed on hover).
+ * dragging moves it (position is remembered across page loads). A tool
+ * cluster nested inside the FAB (revealed on hover) holds the gear button
+ * (code-font prompt) and the logo-swap button (Kimi/DeepSeek logo prompt).
  * @param {object} adapter  platform adapter with getMessages()
  */
 export function mountFloatingButton(adapter) {
@@ -289,26 +308,35 @@ export function mountFloatingButton(adapter) {
     }
   });
 
-  // Gear button — child of the FAB so it follows on drag; opens code-font prompt.
-  // The outer button is a transparent hover-bridge (overlaps the FAB edge so the
-  // cursor can travel to it without the gear disappearing); the visible round
-  // icon lives in the inner .gear-icon span.
-  const gear = document.createElement('button');
-  gear.className = 'fab settings';
-  gear.type = 'button';
-  gear.title = t('settingsTitle');
-  gear.setAttribute('aria-label', t('settingsTitle'));
-  const gearIcon = document.createElement('span');
-  gearIcon.className = 'gear-icon';
-  gearIcon.appendChild(makeFabIcon(true));
-  gear.appendChild(gearIcon);
-  gear.addEventListener('click', (e) => {
-    // Don't let the click bubble up to the FAB (which would trigger a copy).
-    e.preventDefault();
-    e.stopPropagation();
-    promptCodeFont(shadow);
-  });
-  fab.appendChild(gear);
+  // Tools cluster — child of the FAB so it follows on drag. Holds the gear
+  // (code-font prompt) and the swatch (site-logo prompt). The cluster is a
+  // transparent hover-bridge (overlaps the FAB edge so the cursor can travel
+  // to the buttons without them disappearing); the visible round icons are
+  // the .fab.tool buttons inside.
+  const tools = document.createElement('div');
+  tools.className = 'fab tools';
+
+  const makeTool = (icon, title, onClick) => {
+    const btn = document.createElement('button');
+    btn.className = 'fab tool';
+    btn.type = 'button';
+    btn.title = title;
+    btn.setAttribute('aria-label', title);
+    btn.appendChild(makeFabIcon(icon));
+    btn.addEventListener('click', (e) => {
+      // Don't let the click bubble up to the FAB (which would trigger a copy).
+      e.preventDefault();
+      e.stopPropagation();
+      onClick();
+    });
+    tools.appendChild(btn);
+    return btn;
+  };
+
+  makeTool('gear', t('settingsTitle'), () => promptCodeFont(shadow));
+  makeTool('swatch', t('settingsLogoTitle'), () => promptLogoChoice(shadow, toast));
+
+  fab.appendChild(tools);
 
   shadow.appendChild(fab);
   applySavedPosition(fab);

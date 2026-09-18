@@ -12,6 +12,7 @@ import deepseek from './platforms/deepseek.js';
 import kimi from './platforms/kimi.js';
 import doubao from './platforms/doubao.js';
 import { mountFloatingButton, mountPerMessageButtons } from './ui.js';
+import { applyLogoSwap } from './logo.js';
 
 const ADAPTERS = [chatgpt, gemini, claude, deepseek, kimi, doubao];
 
@@ -38,6 +39,7 @@ function boot() {
   console.log(`[ai-copy] active on ${adapter.name}`);
   mountFloatingButton(adapter);
   mountPerMessageButtons(adapter);
+  applyLogoSwap(); // no-op unless the logo setting is non-empty
 }
 
 if (document.readyState === 'loading') {

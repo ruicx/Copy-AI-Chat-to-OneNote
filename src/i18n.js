@@ -87,6 +87,21 @@ const STRINGS = {
   // Toast after clearing the custom font back to the default.
   settingsCodeFontReset:  { zh: '✓ 代码字体已恢复默认',
                             en: '✓ Code font reset to default' },
+  // Logo-swap button tooltip (next to the gear on the FAB).
+  settingsLogoTitle:      { zh: '切换站点 Logo（Kimi / DeepSeek）',
+                            en: 'Swap site logo (Kimi / DeepSeek)' },
+  // Prompt asking which brand the top-left site logo should become.
+  settingsLogoPrompt:     { zh: '切换左上角站点 Logo —— 输入 kimi 或 deepseek（留空恢复默认）：',
+                            en: 'Swap the top-left site logo — enter kimi or deepseek (leave empty to restore default):' },
+  // Toast after switching the site logo. {name} → the chosen brand name.
+  settingsLogoSaved:      { zh: '✓ Logo 已切换为 {name}',
+                            en: '✓ Logo switched to {name}' },
+  // Toast after clearing the logo back to the site's own.
+  settingsLogoReset:      { zh: '✓ Logo 已恢复默认',
+                            en: '✓ Logo restored to default' },
+  // Toast when the prompt input is not one of the known brands.
+  settingsLogoInvalid:    { zh: '✗ 无法识别的 Logo，可选：kimi、deepseek',
+                            en: '✗ Unknown logo — choose kimi or deepseek' },
 };
 
 /**

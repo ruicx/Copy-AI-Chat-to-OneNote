@@ -1,6 +1,6 @@
 {
   "name": "ai-chat-copy-onenote",
-  "version": "0.3.0",
+  "version": "0.4.1",
   "description": "Tampermonkey userscript: copy AI chat conversations to clipboard, paste into OneNote preserving headings/tables/code blocks/math equations.",
   "type": "module",
   "private": true,
