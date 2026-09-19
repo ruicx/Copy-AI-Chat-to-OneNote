@@ -58,10 +58,11 @@ const STRINGS = {
   overlayTurn:      { zh: '📋 本轮',
                       en: '📋 Turn' },
   // Short pill labels for bars that render icon + text (Kimi user bar).
-  pillOne:          { zh: '复制本条',
-                      en: 'Copy msg' },
-  pillTurn:         { zh: '复制本轮',
-                      en: 'Copy turn' },
+  // Kept to two characters in zh — the bar wraps anything longer.
+  pillOne:          { zh: '本条',
+                      en: 'This' },
+  pillTurn:         { zh: '本轮',
+                      en: 'Turn' },
   // Role-badge labels prepended to each pasted message.
   badgeUser:        { zh: '🧑 用户',
                       en: '🧑 You' },

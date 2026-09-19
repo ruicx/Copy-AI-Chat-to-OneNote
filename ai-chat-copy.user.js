@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI 对话一键复制到 OneNote
 // @namespace    https://github.com/ruicx/Copy-AI-Chat-to-OneNote
-// @version      0.5.7
+// @version      0.5.8
 // @description  Copy AI Chat (ChatGPT/Gemini/Claude/DeepSeek/Kimi/Doubao) content to OneNote with a single click. Support Markdown, code blocks, and images. Copy the entire conversation or just the latest message. Compatible with Tampermonkey and Violentmonkey.
 // @author       ruicx
 // @match        https://gemini.google.com/*
@@ -2007,13 +2007,14 @@
       en: "\u{1F4CB} Turn"
     },
     // Short pill labels for bars that render icon + text (Kimi user bar).
+    // Kept to two characters in zh — the bar wraps anything longer.
     pillOne: {
-      zh: "\u590D\u5236\u672C\u6761",
-      en: "Copy msg"
+      zh: "\u672C\u6761",
+      en: "This"
     },
     pillTurn: {
-      zh: "\u590D\u5236\u672C\u8F6E",
-      en: "Copy turn"
+      zh: "\u672C\u8F6E",
+      en: "Turn"
     },
     // Role-badge labels prepended to each pasted message.
     badgeUser: {
