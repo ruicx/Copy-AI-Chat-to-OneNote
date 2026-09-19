@@ -70,9 +70,32 @@
 
 ---
 
-## DeepSeek / Kimi / 豆包（待校准 ⚠️）
+## DeepSeek（已验证 ✅）
 
-均为启发式兜底（`.ds-markdown` / `[class*="bubble"]` / `[class*="message-item"]`），首次使用前务必按上述步骤用 DevTools 校准并补夹具测试。
+**核实日期**：2026-09，基于保存的真实页面（"对话格式测试内容"会话），夹具
+`test/fixtures/deepseek-sample.html`，详细说明见 AGENTS.md 的 DeepSeek 章节。
+
+**选择器**（`src/platforms/deepseek.js`）：
+- 轮次：`div.ds-message`（在 `ds-virtual-list` 内，滚动时挂载/卸载）
+- 角色判定：靠内容标记——助手 `.ds-markdown.ds-assistant-message-main-content`，
+  用户 `.ds-collapsible-text` 纯文本；外层 wrapper 类名是每版混淆的，不能依赖
+- 原生操作条：`.ds-flex` 内的 `[role=button].ds-button`（助手 6 个、用户 2 个），
+  条内**第一个**就是站点复制按钮（16px svg 路径 `M6.14929 4.02032…`），
+  我们的按钮插在它后面；消息内部的代码块 banner 也带 `ds-button`，需排除
+
+**转换器要点**（`src/converter.js`）：
+- 代码块：`div.md-code-block` 拦截——banner 第一个 span 是语言标签，
+  `pre` **没有 `<code>` 子元素**（Prism token span 直接在 pre 里）
+- 数学：KaTeX 渲染、无 `data-math`，行内是裸 `span.katex`——LaTeX 从
+  `annotation[encoding="application/x-tex"]` 提取（`katexAnnotationTex()`）
+- 表格：线上 HTML 缺 `</th></td>` 闭合标签，浏览器自动补全；linkedom 不会，
+  夹具里已重写为浏览器解析后的形式
+
+---
+
+## Kimi / 豆包（待校准 ⚠️）
+
+均为启发式兜底（`[class*="bubble"]` / `[class*="message-item"]`），首次使用前务必按上述步骤用 DevTools 校准并补夹具测试。
 
 ---
 

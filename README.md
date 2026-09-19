@@ -125,11 +125,11 @@ is saved in `localStorage` and persists across sessions.
 | ChatGPT | ✅ Calibrated | `[data-message-author-role]` + `.markdown`. Native toolbar injection (default styling path). |
 | Gemini | ✅ Calibrated | `<user-query>` / `<model-response>` custom elements, `<code-block>`, image-in-`<button>`, cloned `<gem-icon-button>` toolbar buttons matching Material styling. |
 | Claude | ⚠️ Heuristic fallback | `[data-testid="user-message"]` + `[class*="prose"]`. Calibrate before relying on it. |
-| DeepSeek | ⚠️ Heuristic fallback | `.ds-markdown`. Calibrate before relying on it. |
+| DeepSeek | ✅ Calibrated | `.ds-message` turns + `.ds-markdown` content. Native toolbar injection (cloned `ds-button` beside the site's own copy button). KaTeX-annotation math and `md-code-block` code fences handled in the converter. |
 | Kimi | ⚠️ Heuristic fallback | `[class*="bubble"]`. Calibrate before relying on it. |
 | Doubao | ⚠️ Heuristic fallback | `[class*="message-item"]`. Calibrate before relying on it. |
 
-> Selectors on Claude / DeepSeek / Kimi / Doubao are heuristic fallbacks. The
+> Selectors on Claude / Kimi / Doubao are heuristic fallbacks. The
 > first time you use them, confirm the selectors with DevTools — see
 > [`docs/selector-notes.md`](./docs/selector-notes.md).
 
@@ -137,7 +137,7 @@ is saved in `localStorage` and persists across sessions.
 
 ```bash
 npm install          # marked, esbuild, linkedom
-npm test             # full automated suite (94 tests)
+npm test             # full automated suite (174 tests)
 npm run build        # regenerate ai-chat-copy.user.js (LF line endings)
 ```
 
