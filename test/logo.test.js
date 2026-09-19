@@ -10,6 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const geminiFixture = readFileSync(join(__dirname, 'fixtures/gemini-logo.html'), 'utf8');
 const chatgptFixture = readFileSync(join(__dirname, 'fixtures/chatgpt-logo.html'), 'utf8');
 const chatgptTextFixture = readFileSync(join(__dirname, 'fixtures/chatgpt-text.html'), 'utf8');
+const geminiTextFixture = readFileSync(join(__dirname, 'fixtures/gemini-text.html'), 'utf8');
 
 // Minimal localStorage shim so readLogoSetting can be exercised in Node.
 const store = new Map();
@@ -430,6 +431,81 @@ test('ChatGPT text swap: other hosts are a no-op', () => {
   const p = doc.querySelector('p[data-placeholder]');
   assert.equal(p.getAttribute('data-placeholder'), '问问 ChatGPT');
   assert.match(doc.querySelector('[data-testid="thread-disclaimer"]').textContent.trim(), /^ChatGPT/);
+});
+
+test('Gemini: composer placeholder + hallucination disclaimer follow the brand name', () => {
+  const doc = parse(geminiTextFixture);
+  applyLogo(doc, GEMINI_HOST, 'kimi');
+
+  // Placeholder: the Quill editor's data-placeholder is swapped in place
+  // (feeds the site's content:attr(data-placeholder) rules on BOTH the
+  // visible ::before and the hidden ::after).
+  const editor = doc.querySelector('.ql-editor[data-placeholder]');
+  assert.equal(editor.getAttribute('data-placeholder'), '问问 Kimi');
+
+  // Disclaimer: the text node inside <hallucination-disclaimer> rewritten.
+  const box = doc.querySelector('hallucination-disclaimer');
+  assert.equal(box.textContent.trim(), 'Kimi 是一款 AI 工具，其回答未必正确无误。');
+
+  // Nothing else carrying the name may be touched: the conversation body
+  // and the aria-labels stay exactly as the site has them, and a
+  // placeholder without the site name is not swapped.
+  assert.equal(doc.querySelector('.markdown p').textContent, 'Gemini 是 Google 推出的 AI 模型。');
+  assert.equal(editor.getAttribute('aria-label'), '为 Gemini 输入提示');
+  assert.equal(doc.querySelector('input[data-placeholder]').getAttribute('data-placeholder'), '搜索对话');
+});
+
+test('Gemini: text swap is idempotent and re-brandable in place', () => {
+  const doc = parse(geminiTextFixture);
+  applyLogo(doc, GEMINI_HOST, 'kimi');
+  const editor = doc.querySelector('.ql-editor[data-placeholder]');
+  const box = doc.querySelector('hallucination-disclaimer');
+
+  applyLogo(doc, GEMINI_HOST, 'kimi');
+  assert.equal(editor.getAttribute('data-placeholder'), '问问 Kimi', 'placeholder settles');
+  assert.equal(box.textContent.trim(), 'Kimi 是一款 AI 工具，其回答未必正确无误。', 'disclaimer settles');
+
+  applyLogo(doc, GEMINI_HOST, 'deepseek');
+  assert.equal(editor.getAttribute('data-placeholder'), '问问 DeepSeek', 'placeholder re-branded');
+  assert.equal(box.textContent.trim(), 'DeepSeek 是一款 AI 工具，其回答未必正确无误。', 'disclaimer re-branded');
+});
+
+test('Gemini: the content-override covers the rendered pseudo-elements', () => {
+  const doc = parse(geminiTextFixture);
+  // Gemini renders the placeholder through ::before (visible) AND ::after
+  // (a visibility:hidden measurement hack) — both computed as live.
+  globalThis.getComputedStyle = (el, pseudo) =>
+    ({ content: pseudo === '::before' || pseudo === '::after' ? '"问问 Gemini"' : 'none' });
+  try {
+    applyLogo(doc, GEMINI_HOST, 'kimi');
+  } finally {
+    delete globalThis.getComputedStyle;
+  }
+
+  const style = doc.querySelector('style[data-ai-copy-text]');
+  assert.ok(style, 'override style injected');
+  assert.match(style.textContent,
+    /\[data-placeholder="问问 Gemini"\]::before\{content:"问问 Kimi"!important\}/);
+  assert.match(style.textContent,
+    /\[data-placeholder="问问 Gemini"\]::after\{content:"问问 Kimi"!important\}/);
+  // The placeholder without the site name gets no rule.
+  assert.doesNotMatch(style.textContent, /搜索/);
+});
+
+test('Gemini: restoreLogos puts the placeholder + disclaimer back', () => {
+  const doc = parse(geminiTextFixture);
+  applyLogo(doc, GEMINI_HOST, 'deepseek');
+  restoreLogos(doc);
+
+  assert.equal(doc.querySelector('.ql-editor[data-placeholder]').getAttribute('data-placeholder'),
+    '问问 Gemini', 'placeholder restored');
+  assert.equal(doc.querySelector('hallucination-disclaimer').textContent.trim(),
+    'Gemini 是一款 AI 工具，其回答未必正确无误。', 'disclaimer restored');
+  assert.equal(doc.querySelector('style[data-ai-copy-text]'), null, 'override style removed');
+
+  applyLogo(doc, GEMINI_HOST, 'kimi');
+  assert.equal(doc.querySelector('.ql-editor[data-placeholder]').getAttribute('data-placeholder'),
+    '问问 Kimi', 're-applies after restore');
 });
 
 test('ChatGPT: one failing step does not block the others', () => {

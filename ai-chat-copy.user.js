@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI 对话一键复制到 OneNote
 // @namespace    https://github.com/ruicx/Copy-AI-Chat-to-OneNote
-// @version      0.5.3
+// @version      0.5.4
 // @description  Copy AI Chat (ChatGPT/Gemini/Claude/DeepSeek/Kimi/Doubao) content to OneNote with a single click. Support Markdown, code blocks, and images. Copy the entire conversation or just the latest message. Compatible with Tampermonkey and Violentmonkey.
 // @author       ruicx
 // @match        https://gemini.google.com/*
@@ -24430,6 +24430,11 @@ ${DIVIDER}
     );
     if (wordmark) ensureClone(doc, wordmark, wmClone, choice, brand);
     else if (wmClone) wmClone.remove();
+    try {
+      swapBrandTexts(doc, brand, "Gemini", "hallucination-disclaimer");
+    } catch (err) {
+      noteError("gemini-texts", err);
+    }
   }
   function rewriteClone(clone, choice, brand) {
     if (clone.localName === "svg") {
@@ -24513,7 +24518,7 @@ ${DIVIDER}
       noteError("wordmark", err);
     }
     try {
-      swapChatGPTTexts(doc, brand);
+      swapBrandTexts(doc, brand, "ChatGPT", '[data-testid="thread-disclaimer"]');
     } catch (err) {
       noteError("texts", err);
     }
@@ -24542,16 +24547,16 @@ ${DIVIDER}
   function cssQuote(s) {
     return '"' + s.replace(/[\\"]/g, "\\$&") + '"';
   }
-  function swapChatGPTTexts(doc, brand) {
+  function swapBrandTexts(doc, brand, siteName, disclaimerSel) {
     try {
       const rules = [];
       for (const el of doc.querySelectorAll("[data-placeholder]")) {
         const snap = originals.get(el);
         const value = el.getAttribute("data-placeholder") || "";
         const orig = snap && typeof snap.placeholder === "string" ? snap.placeholder : value;
-        if (orig.includes("ChatGPT")) {
+        if (orig.includes(siteName)) {
           if (!snap) rememberOriginal(el, { placeholder: value });
-          const wanted = orig.split("ChatGPT").join(brand.name);
+          const wanted = orig.split(siteName).join(brand.name);
           if (value !== wanted) el.setAttribute("data-placeholder", wanted);
           for (const pseudo of ["::before", "::after"]) {
             if (pseudoRenders(el, pseudo)) {
@@ -24559,15 +24564,15 @@ ${DIVIDER}
             }
           }
         }
-        swapTextNodesIn(el, brand);
+        swapTextNodesIn(el, brand, siteName);
       }
       syncTextStyle(doc, rules);
     } catch (err) {
       noteError("placeholder", err);
     }
     try {
-      for (const box of doc.querySelectorAll('[data-testid="thread-disclaimer"]')) {
-        swapTextNodesIn(box, brand);
+      for (const box of doc.querySelectorAll(disclaimerSel)) {
+        swapTextNodesIn(box, brand, siteName);
       }
     } catch (err) {
       noteError("disclaimer", err);
@@ -24598,14 +24603,14 @@ ${DIVIDER}
     const css2 = rules.join("\n");
     if (style.textContent !== css2) style.textContent = css2;
   }
-  function swapTextNodesIn(scope, brand) {
+  function swapTextNodesIn(scope, brand, siteName) {
     for (const node of textNodesIn(scope)) {
       const snap = originals.get(node);
       const value = node.nodeValue || "";
-      if (!snap && !value.includes("ChatGPT")) continue;
+      if (!snap && !value.includes(siteName)) continue;
       const origText = snap && typeof snap.text === "string" ? snap.text : value;
       if (!snap) rememberOriginal(node, { text: value });
-      const wanted = origText.split("ChatGPT").join(brand.name);
+      const wanted = origText.split(siteName).join(brand.name);
       if (node.nodeValue !== wanted) node.nodeValue = wanted;
     }
   }
@@ -24688,9 +24693,7 @@ ${DIVIDER}
       }
       restoreTextNodesIn(el);
     });
-    doc.querySelectorAll('[data-testid="thread-disclaimer"]').forEach((box) => {
-      restoreTextNodesIn(box);
-    });
+    doc.querySelectorAll('[data-testid="thread-disclaimer"], hallucination-disclaimer').forEach((box) => restoreTextNodesIn(box));
   }
   function restoreTextNodesIn(scope) {
     for (const node of textNodesIn(scope)) {
@@ -24708,7 +24711,7 @@ ${DIVIDER}
   if (typeof window !== "undefined") {
     try {
       window.__aiCopyLogoDebug = () => ({
-        version: true ? "0.5.3" : "dev",
+        version: true ? "0.5.4" : "dev",
         choice: readLogoSetting(),
         placeholders: [...document.querySelectorAll("[data-placeholder]")].map((el) => el.getAttribute("data-placeholder")),
         overrideStyleInjected: !!document.querySelector(`style[${TEXT_STYLE_ATTR}]`),
@@ -25250,7 +25253,7 @@ ${DIVIDER}
     const adapter = pickAdapter();
     if (!adapter) return;
     booted = true;
-    const version2 = true ? "0.5.3" : "dev";
+    const version2 = true ? "0.5.4" : "dev";
     console.log(`[ai-copy] active on ${adapter.name} v${version2}`);
     mountFloatingButton(adapter);
     mountPerMessageButtons(adapter);

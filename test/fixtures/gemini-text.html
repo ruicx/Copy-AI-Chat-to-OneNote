@@ -1,0 +1,47 @@
+<!doctype html>
+<!-- Gemini UI: the two visible "Gemini" text slots outside the logo.
+     Saved from live pages (4533d54c / 11f1b52d). The composer is a Quill
+     editor: <rich-textarea> wrapping <div class="ql-editor ql-blank"
+     data-placeholder="问问 Gemini"> left EMPTY — the visible copy renders
+     through the site CSS
+     rich-textarea .ql-editor.ql-blank:before{content:attr(data-placeholder)}
+     plus a visibility:hidden ::after reading the same attribute (a
+     measurement hack). The swap therefore mutates the attribute AND injects
+     a content-override for the pseudo-element(s) getComputedStyle shows are
+     rendering (computed style is not available under linkedom, so that path
+     is tested with a stub). The disclaimer pill is a plain Angular text
+     node inside the <hallucination-disclaimer> custom element (only present
+     in some page states — the welcome page has it, a conversation may not).
+     The conversation body is here to prove the swap never touches it, and
+     the second data-placeholder (no site name) proves the name guard. -->
+<html lang="zh">
+<head>
+  <title>Gemini</title>
+  <style>
+    rich-textarea .ql-editor.ql-blank:before{font-style:unset;color:var(--rich-textarea-placeholder-color,var(--bard-color-form-field-placeholder));inset-inline:0 16px;content:attr(data-placeholder);position:absolute}
+    rich-textarea .ql-editor.ql-blank:after{content:attr(data-placeholder);display:block;margin-top:-24px;visibility:hidden}
+  </style>
+</head>
+<body>
+  <bard-sidenav></bard-sidenav>
+  <chat-window>
+    <input-container>
+      <input-area-v2>
+        <fieldset>
+          <rich-textarea class="ql-container ql-bubble simplified-input ng-untouched ng-pristine ng-valid" enterkeyhint="send" dir="ltr" style="--textarea-max-rows:7">
+            <div class="ql-editor ql-blank textarea new-input-ui" data-gramm="false" contenteditable="true" dir="ltr" role="textbox" aria-multiline="true" aria-label="为 Gemini 输入提示" data-placeholder="问问 Gemini"><p><br></p></div>
+            <div class="ql-clipboard" contenteditable="true" tabindex="-1"></div>
+          </rich-textarea>
+        </fieldset>
+        <hallucination-disclaimer aligntext="center" class="hallucination-disclaimer enable-luminous-disclaimer-updates ng-star-inserted">
+          <div class="capabilities-disclaimer" style="--align-text:center">
+            <p class="gds-body-s desktop-spacing ng-star-inserted">Gemini 是一款 AI 工具，其回答未必正确无误。</p>
+          </div>
+        </hallucination-disclaimer>
+      </input-area-v2>
+    </input-container>
+  </chat-window>
+  <div class="markdown"><p>Gemini 是 Google 推出的 AI 模型。</p></div>
+  <input type="text" data-placeholder="搜索对话" aria-label="搜索">
+</body>
+</html>

@@ -10,14 +10,14 @@
  * Brand marks are single-path 24x24 vectors from simple-icons, embedded as
  * string constants so the userscript stays self-contained (no network).
  *
- * ChatGPT also disguises the two visible text slots that carry the name —
- * the composer placeholder ("问问 ChatGPT") and the thread disclaimer pill
- * ("ChatGPT 也可能会犯错。…") — to the brand's display name. The placeholder
- * is swapped in place (attribute + text + a computed-style-detected
- * content-override on whichever pseudo-element the site actually renders);
- * the disclaimer is a text-node rewrite. See swapChatGPTTexts for why
- * nothing else (conversation body, sr-only turn labels, aria-labels) is
- * touched.
+ * ChatGPT and Gemini also disguise the two visible text slots that carry
+ * the site name — the composer placeholder ("问问 ChatGPT" / "问问 Gemini")
+ * and the disclaimer pill ("ChatGPT 也可能会犯错…" / "Gemini 是一款 AI
+ * 工具…") — to the brand's display name. The placeholder is swapped in
+ * place (attribute + text + a computed-style-detected content-override on
+ * whichever pseudo-element the site actually renders); the disclaimer is a
+ * text-node rewrite. See swapBrandTexts for why nothing else (conversation
+ * body, sr-only turn labels, aria-labels) is touched.
  *
  * Per-platform notes (calibrated against saved pages; see
  * test/fixtures/gemini-logo.html and chatgpt-logo.html):
@@ -120,6 +120,11 @@ function swapGemini(doc, choice, brand) {
     doc, '.side-nav-sparkle-button .gemini-sidenav-text', (el) => el);
   if (wordmark) ensureClone(doc, wordmark, wmClone, choice, brand);
   else if (wmClone) wmClone.remove();
+
+  // Text disguise: composer placeholder ("问问 Gemini", Quill's
+  // .ql-editor[data-placeholder]) + the hallucination-disclaimer pill.
+  try { swapBrandTexts(doc, brand, 'Gemini', 'hallucination-disclaimer'); }
+  catch (err) { noteError('gemini-texts', err); }
 }
 
 /** (Re)write a clone's content for the chosen brand: an SVG clone gets a
@@ -255,7 +260,9 @@ function swapChatGPT(doc, choice, brand) {
     removeOrphanClones(doc, `.header-wordmark[${SWAP_ATTR}]`);
   } catch (err) { noteError('wordmark', err); }
 
-  try { swapChatGPTTexts(doc, brand); } catch (err) { noteError('texts', err); }
+  try {
+    swapBrandTexts(doc, brand, 'ChatGPT', '[data-testid="thread-disclaimer"]');
+  } catch (err) { noteError('texts', err); }
 }
 
 /** Our clone for `orig`, if it is already the element right after it. */
@@ -293,54 +300,56 @@ function cssQuote(s) {
   return '"' + s.replace(/[\\"]/g, '\\$&') + '"';
 }
 
-/** ChatGPT text slots that display the site's name, swapped to the brand's
- *  display name ("ChatGPT" → "Kimi" / "DeepSeek"). Deliberately name-only
- *  and narrowly scoped — the conversation body, the sr-only "ChatGPT 说："
- *  turn labels, and aria-labels are never touched (the conversation text
- *  must survive copying byte-exact).
- *  - Composer placeholder: the ProseMirror <p class="placeholder"
- *    data-placeholder="…"> — the site renders its visible copy through a
- *    PSEUDO-ELEMENT whose rule changed across builds (old saved pages:
- *    unscoped `.placeholder:before{content:attr(data-placeholder)}`; current
- *    build: `.wcDTda_prosemirror-parent.default-browser .placeholder:after`
- *    via `--tw-content:attr(...)`, and Firefox gets a :before variant — see
- *    the c2e1db12 fixture). So, in place, three complementary writes:
+/** Text slots that display the SITE's name, swapped to the brand's display
+ *  name ("ChatGPT"/"Gemini" → "Kimi" / "DeepSeek"). Runs on both hosts —
+ *  `siteName` is the host's own brand string, `disclaimerSel` its disclaimer
+ *  anchor. Deliberately name-only and narrowly scoped — the conversation
+ *  body, sr-only turn labels, and aria-labels are never touched (the
+ *  conversation text must survive copying byte-exact).
+ *  - Composer placeholder: the host's editor element carries
+ *    data-placeholder and BOTH sites render its visible copy through a
+ *    PSEUDO-ELEMENT reading that attribute — ChatGPT (ProseMirror):
+ *    `.wcDTda_prosemirror-parent.default-browser .placeholder:after` via
+ *    `--tw-content:attr(...)` on the current build (older builds an
+ *    unscoped/`.firefox` `:before`); Gemini (Quill):
+ *    `rich-textarea .ql-editor.ql-blank:before{content:attr(data-placeholder)}`
+ *    plus a visibility:hidden `::after` reading the same attribute (see the
+ *    chatgpt-text / gemini-text fixtures). So, in place, three
+ *    complementary writes:
  *      1. the attribute itself (feeds any attr()-based rule);
  *      2. any real text inside the element (defensive, in case a build
  *         renders the copy as a text node);
  *      3. a `content:"…"` override rule keyed on the placeholder's ORIGINAL
  *         attribute value, injected ONLY for the pseudo-element(s)
- *         getComputedStyle shows the site actually renders (skipped in
- *         Node tests — no computed style). Keying on the original value
- *         means the rule keeps hitting whenever ProseMirror's placeholder
- *         decoration resets the attribute between settle passes (live
- *         regression 2026-09: the attr swap alone never stuck) — the
- *         visual is pinned in every state. Overriding an already-rendering
- *         pseudo can never add a second copy — which is exactly what
- *         blindly injecting `::before` did on the current build (double
- *         "问问 Kimi问问 ChatGPT"). The rule self-disables while typing
- *         (ProseMirror drops the attribute on the no-longer-empty p).
- *  - Thread disclaimer: a plain React text node inside
- *    [data-testid=thread-disclaimer], rewritten in place. React only
- *    re-renders it when its state changes; such a re-render restores the
- *    site copy, which the next settle pass swaps again.
+ *         getComputedStyle shows are actually rendering (skipped in Node
+ *         tests — no computed style). Keying on the original value means
+ *         the rule keeps hitting whenever the editor's placeholder
+ *         machinery resets the attribute between settle passes (live
+ *         regression 2026-09: an attr swap alone never stuck on ChatGPT);
+ *         the rule keeps hitting in every attribute state and
+ *         self-disables while typing, when the attribute is dropped.
+ *  - Disclaimer: a plain framework-rendered text node inside
+ *    `disclaimerSel` ([data-testid=thread-disclaimer] on ChatGPT,
+ *    <hallucination-disclaimer> on Gemini), rewritten in place. The
+ *    framework only re-renders it when its state changes; such a re-render
+ *    restores the site copy, which the next settle pass swaps again.
  *  Originals are remembered (like the logo slots) so clearing the setting
  *  restores them and a brand switch rewrites from the original, not from the
  *  already-swapped copy. Both keys are the site's own stable hooks, so the
  *  swap is locale-agnostic — any UI language works. */
-function swapChatGPTTexts(doc, brand) {
+function swapBrandTexts(doc, brand, siteName, disclaimerSel) {
   try {
     const rules = [];
     for (const el of doc.querySelectorAll('[data-placeholder]')) {
       const snap = originals.get(el);
       const value = el.getAttribute('data-placeholder') || '';
       // A remembered original means this slot is ours: re-brand from it even
-      // though the current value no longer contains "ChatGPT". Untouched site
-      // text is only a candidate when it carries the name.
+      // though the current value no longer contains the site name. Untouched
+      // site text is only a candidate when it carries the name.
       const orig = snap && typeof snap.placeholder === 'string' ? snap.placeholder : value;
-      if (orig.includes('ChatGPT')) {
+      if (orig.includes(siteName)) {
         if (!snap) rememberOriginal(el, { placeholder: value });
-        const wanted = orig.split('ChatGPT').join(brand.name);
+        const wanted = orig.split(siteName).join(brand.name);
         if (value !== wanted) el.setAttribute('data-placeholder', wanted);
         // Override only the pseudo-element(s) the site itself renders, keyed
         // on the ORIGINAL value so the rule survives attribute resets.
@@ -351,13 +360,13 @@ function swapChatGPTTexts(doc, brand) {
           }
         }
       }
-      swapTextNodesIn(el, brand);
+      swapTextNodesIn(el, brand, siteName);
     }
     syncTextStyle(doc, rules);
   } catch (err) { noteError('placeholder', err); }
   try {
-    for (const box of doc.querySelectorAll('[data-testid="thread-disclaimer"]')) {
-      swapTextNodesIn(box, brand);
+    for (const box of doc.querySelectorAll(disclaimerSel)) {
+      swapTextNodesIn(box, brand, siteName);
     }
   } catch (err) { noteError('disclaimer', err); }
 }
@@ -393,20 +402,20 @@ function syncTextStyle(doc, rules) {
   if (style.textContent !== css) style.textContent = css;
 }
 
-/** Swap "ChatGPT" → the brand name in every text node under `scope`,
+/** Swap the site name → the brand name in every text node under `scope`,
  *  remembering originals for restore + re-branding. Settles: writes nothing
  *  when the node already carries the wanted name. */
-function swapTextNodesIn(scope, brand) {
+function swapTextNodesIn(scope, brand, siteName) {
   for (const node of textNodesIn(scope)) {
     const snap = originals.get(node);
     const value = node.nodeValue || '';
     // Untouched site text is only a candidate when it carries the name;
     // already-swapped nodes must fall through so a brand switch can
     // rewrite them from the remembered original.
-    if (!snap && !value.includes('ChatGPT')) continue;
+    if (!snap && !value.includes(siteName)) continue;
     const origText = snap && typeof snap.text === 'string' ? snap.text : value;
     if (!snap) rememberOriginal(node, { text: value });
-    const wanted = origText.split('ChatGPT').join(brand.name);
+    const wanted = origText.split(siteName).join(brand.name);
     if (node.nodeValue !== wanted) node.nodeValue = wanted;
   }
 }
@@ -503,7 +512,7 @@ export function restoreLogos(doc) {
     }
   });
   // Text/attr slots: the placeholder (attribute + injected style) and the
-  // disclaimer pill.
+  // disclaimer pill, on either host.
   doc.querySelectorAll(`style[${TEXT_STYLE_ATTR}]`).forEach((el) => el.remove());
   doc.querySelectorAll('[data-placeholder]').forEach((el) => {
     const snap = originals.get(el);
@@ -515,9 +524,8 @@ export function restoreLogos(doc) {
     }
     restoreTextNodesIn(el);
   });
-  doc.querySelectorAll('[data-testid="thread-disclaimer"]').forEach((box) => {
-    restoreTextNodesIn(box);
-  });
+  doc.querySelectorAll('[data-testid="thread-disclaimer"], hallucination-disclaimer')
+    .forEach((box) => restoreTextNodesIn(box));
 }
 
 /** Put remembered text-node originals back under `scope`. */

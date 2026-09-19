@@ -42,7 +42,7 @@ across platforms. Do not "optimise" by short-circuiting this pipeline.
 | `src/clipboard.js` | **Stage 3.** `copyForOneNote(html, text)` — `ClipboardItem` write with `execCommand` fallback. |
 | `src/i18n.js` | Bilingual string table (zh/en) + `t(key, vars)`. Locale detected once from `navigator.language` (`zh*` → zh, else en). |
 | `src/ui.js` | FAB (with a hover-revealed tool cluster: gear = code font, swatch = site logo), per-message buttons, native-toolbar injection, toast. All in a Shadow DOM. |
-| `src/logo.js` | Optional brand disguise (`ai-copy-logo` setting): replaces Gemini's sparkle `<img>` / ChatGPT's blossom + wordmark with the Kimi or DeepSeek mark (embedded simple-icons paths, self-contained), and on ChatGPT also renames the composer placeholder ("问问 ChatGPT") + thread disclaimer pill to the brand name. Unset = zero DOM writes. Runs at boot + a debounced MutationObserver + a settle-based `setInterval` safety net (SPA re-renders; swaps EVERY logo instance, not just the first). |
+| `src/logo.js` | Optional brand disguise (`ai-copy-logo` setting): replaces Gemini's sparkle `<img>` / ChatGPT's blossom + wordmark with the Kimi or DeepSeek mark (embedded simple-icons paths, self-contained), and renames the composer placeholder + disclaimer pill on BOTH hosts to the brand name. Unset = zero DOM writes. Runs at boot + a debounced MutationObserver + a settle-based `setInterval` safety net (SPA re-renders; swaps EVERY logo instance, not just the first). |
 | `src/platforms/base.js` | Adapter contract + `queryFirst` / `queryAll` fallback helpers. |
 | `src/platforms/*.js` | One adapter per platform. ChatGPT & Gemini are calibrated; the rest are heuristic fallbacks. |
 | `test/` | Node `node:test` suite. Converter/renderer/pipeline run via linkedom; adapters run against `test/fixtures/*.html`. |
@@ -230,6 +230,20 @@ most fragile part of the codebase. Key things:
   (`.gemini-sidenav-text` in the same `<a>`, hide + clone). Angular may
   re-create these or toggle `.expanded` on sidebar expand — the debounced
   MutationObserver (childList + class/style attributes) re-syncs.
+- *Text disguise (same setting):* the composer placeholder ("问问 Gemini")
+  and the disclaimer pill follow the brand name too. The composer is Quill:
+  `<div class="ql-editor ql-blank" data-placeholder="…">` inside
+  `<rich-textarea>`, visible copy rendered by
+  `rich-textarea .ql-editor.ql-blank:before{content:attr(data-placeholder)}`
+  plus a visibility:hidden `::after` on the same attribute (measurement
+  hack). Same treatment as ChatGPT's placeholder (see swapBrandTexts):
+  mutate the attribute + rewrite any real text inside + inject a
+  `content:"…"` override keyed on the ORIGINAL value for the pseudo(s)
+  `getComputedStyle` shows rendering. The disclaimer is a plain Angular
+  text node inside the `<hallucination-disclaimer>` custom element (present
+  only in some page states). Never touched: conversation body, aria-labels
+  ("为 Gemini 输入提示"), and `data-placeholder`s without the site name.
+  Fixture: `test/fixtures/gemini-text.html` (4533d54c / 11f1b52d).
 
 When Gemini ships a UI refresh and selectors break: see
 [`docs/selector-notes.md`](./docs/selector-notes.md) for the recalibration
@@ -380,6 +394,6 @@ recalibrating a platform, save a fixture and add an adapter test.
 ## Commit / PR conventions
 
 - Build before committing if `src/` changed: `npm run build`, then commit both.
-- Run `npm test` before pushing — 153 tests should all pass.
+- Run `npm test` before pushing — 157 tests should all pass.
 - Keep the userscript header version in `build.mjs` in sync with
   `package.json` if you bump versions.
