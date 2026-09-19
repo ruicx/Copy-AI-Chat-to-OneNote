@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI 对话一键复制到 OneNote
 // @namespace    https://github.com/ruicx/Copy-AI-Chat-to-OneNote
-// @version      0.4.3
+// @version      0.5.3
 // @description  Copy AI Chat (ChatGPT/Gemini/Claude/DeepSeek/Kimi/Doubao) content to OneNote with a single click. Support Markdown, code blocks, and images. Copy the entire conversation or just the latest message. Compatible with Tampermonkey and Violentmonkey.
 // @author       ruicx
 // @match        https://gemini.google.com/*
@@ -24411,6 +24411,10 @@ ${DIVIDER}
   function rememberOriginal(el, snapshot) {
     if (!originals.has(el)) originals.set(el, snapshot);
   }
+  var debugState = { lastError: "" };
+  function noteError(step, err) {
+    debugState.lastError = step + ": " + (err && err.message || err);
+  }
   function swapGemini(doc, choice, brand) {
     const img = doc.querySelector("img.sparkle-image");
     if (img && img.getAttribute(SWAP_ATTR) !== choice) {
@@ -24451,6 +24455,7 @@ ${DIVIDER}
     return els.find((el) => el.hasAttribute(ORIG_ATTR)) || els.find((el) => el.style.display !== "none");
   }
   function ensureClone(doc, orig, existingClone, choice, brand) {
+    if (!orig.parentElement) return;
     if (!orig.hasAttribute(ORIG_ATTR)) {
       rememberOriginal(orig, { display: orig.style.display || "" });
       orig.style.display = "none";
@@ -24487,16 +24492,31 @@ ${DIVIDER}
     return [...found];
   }
   function swapChatGPT(doc, choice, brand) {
-    for (const svg of blossomSvgs(doc)) {
-      if (svg.hasAttribute(SWAP_ATTR)) continue;
-      ensureClone(doc, svg, adjacentClone(svg), choice, brand);
+    try {
+      for (const svg of blossomSvgs(doc)) {
+        if (svg.isConnected === false) continue;
+        if (svg.hasAttribute(SWAP_ATTR)) continue;
+        ensureClone(doc, svg, adjacentClone(svg), choice, brand);
+      }
+      removeOrphanClones(doc, `svg[${SWAP_ATTR}]`);
+    } catch (err) {
+      noteError("blossom", err);
     }
-    removeOrphanClones(doc, `svg[${SWAP_ATTR}]`);
-    for (const wm of [...doc.querySelectorAll(".header-wordmark")]) {
-      if (wm.hasAttribute(SWAP_ATTR)) continue;
-      ensureClone(doc, wm, adjacentClone(wm), choice, brand);
+    try {
+      for (const wm of [...doc.querySelectorAll(".header-wordmark")]) {
+        if (wm.isConnected === false) continue;
+        if (wm.hasAttribute(SWAP_ATTR)) continue;
+        ensureClone(doc, wm, adjacentClone(wm), choice, brand);
+      }
+      removeOrphanClones(doc, `.header-wordmark[${SWAP_ATTR}]`);
+    } catch (err) {
+      noteError("wordmark", err);
     }
-    removeOrphanClones(doc, `.header-wordmark[${SWAP_ATTR}]`);
+    try {
+      swapChatGPTTexts(doc, brand);
+    } catch (err) {
+      noteError("texts", err);
+    }
   }
   function adjacentClone(orig) {
     const sib = orig.nextElementSibling;
@@ -24506,6 +24526,87 @@ ${DIVIDER}
     for (const clone of [...doc.querySelectorAll(cloneSelector)]) {
       const prev = clone.previousElementSibling;
       if (!prev || !prev.hasAttribute(ORIG_ATTR)) clone.remove();
+    }
+  }
+  function textNodesIn(root4) {
+    const out = [];
+    const walk = (node) => {
+      for (const child of node.childNodes) {
+        if (child.nodeType === 3) out.push(child);
+        else if (child.nodeType === 1) walk(child);
+      }
+    };
+    walk(root4);
+    return out;
+  }
+  function cssQuote(s) {
+    return '"' + s.replace(/[\\"]/g, "\\$&") + '"';
+  }
+  function swapChatGPTTexts(doc, brand) {
+    try {
+      const rules = [];
+      for (const el of doc.querySelectorAll("[data-placeholder]")) {
+        const snap = originals.get(el);
+        const value = el.getAttribute("data-placeholder") || "";
+        const orig = snap && typeof snap.placeholder === "string" ? snap.placeholder : value;
+        if (orig.includes("ChatGPT")) {
+          if (!snap) rememberOriginal(el, { placeholder: value });
+          const wanted = orig.split("ChatGPT").join(brand.name);
+          if (value !== wanted) el.setAttribute("data-placeholder", wanted);
+          for (const pseudo of ["::before", "::after"]) {
+            if (pseudoRenders(el, pseudo)) {
+              rules.push(`[data-placeholder=${cssQuote(orig)}]${pseudo}{content:${cssQuote(wanted)}!important}`);
+            }
+          }
+        }
+        swapTextNodesIn(el, brand);
+      }
+      syncTextStyle(doc, rules);
+    } catch (err) {
+      noteError("placeholder", err);
+    }
+    try {
+      for (const box of doc.querySelectorAll('[data-testid="thread-disclaimer"]')) {
+        swapTextNodesIn(box, brand);
+      }
+    } catch (err) {
+      noteError("disclaimer", err);
+    }
+  }
+  var TEXT_STYLE_ATTR = "data-ai-copy-text";
+  function pseudoRenders(el, pseudo) {
+    if (typeof getComputedStyle !== "function") return false;
+    let content = "";
+    try {
+      content = (getComputedStyle(el, pseudo) || {}).content || "";
+    } catch (_) {
+      return false;
+    }
+    return content !== "none" && content !== "normal" && content !== "";
+  }
+  function syncTextStyle(doc, rules) {
+    let style = doc.querySelector(`style[${TEXT_STYLE_ATTR}]`);
+    if (!rules.length) {
+      if (style) style.remove();
+      return;
+    }
+    if (!style) {
+      style = doc.createElement("style");
+      style.setAttribute(TEXT_STYLE_ATTR, "1");
+      (doc.head || doc.documentElement).appendChild(style);
+    }
+    const css2 = rules.join("\n");
+    if (style.textContent !== css2) style.textContent = css2;
+  }
+  function swapTextNodesIn(scope, brand) {
+    for (const node of textNodesIn(scope)) {
+      const snap = originals.get(node);
+      const value = node.nodeValue || "";
+      if (!snap && !value.includes("ChatGPT")) continue;
+      const origText = snap && typeof snap.text === "string" ? snap.text : value;
+      if (!snap) rememberOriginal(node, { text: value });
+      const wanted = origText.split("ChatGPT").join(brand.name);
+      if (node.nodeValue !== wanted) node.nodeValue = wanted;
     }
   }
   function applyLogo(doc, hostname, choice) {
@@ -24538,7 +24639,7 @@ ${DIVIDER}
       childList: true,
       subtree: true,
       attributes: true,
-      attributeFilter: ["class", "style"]
+      attributeFilter: ["class", "style", "data-placeholder"]
     });
     if (typeof setInterval === "function" && !resyncTimer) {
       resyncTimer = setInterval(applyLogoSwap, RESYNC_MS);
@@ -24576,10 +24677,47 @@ ${DIVIDER}
         el.remove();
       }
     });
+    doc.querySelectorAll(`style[${TEXT_STYLE_ATTR}]`).forEach((el) => el.remove());
+    doc.querySelectorAll("[data-placeholder]").forEach((el) => {
+      const snap = originals.get(el);
+      if (snap && typeof snap.placeholder === "string") {
+        if (el.getAttribute("data-placeholder") !== snap.placeholder) {
+          el.setAttribute("data-placeholder", snap.placeholder);
+        }
+        originals.delete(el);
+      }
+      restoreTextNodesIn(el);
+    });
+    doc.querySelectorAll('[data-testid="thread-disclaimer"]').forEach((box) => {
+      restoreTextNodesIn(box);
+    });
+  }
+  function restoreTextNodesIn(scope) {
+    for (const node of textNodesIn(scope)) {
+      const snap = originals.get(node);
+      if (snap && typeof snap.text === "string") {
+        if (node.nodeValue !== snap.text) node.nodeValue = snap.text;
+        originals.delete(node);
+      }
+    }
   }
   function clearLogoSetting(doc = document) {
     stopObserver();
     restoreLogos(doc);
+  }
+  if (typeof window !== "undefined") {
+    try {
+      window.__aiCopyLogoDebug = () => ({
+        version: true ? "0.5.3" : "dev",
+        choice: readLogoSetting(),
+        placeholders: [...document.querySelectorAll("[data-placeholder]")].map((el) => el.getAttribute("data-placeholder")),
+        overrideStyleInjected: !!document.querySelector(`style[${TEXT_STYLE_ATTR}]`),
+        observerActive: !!observer,
+        resyncActive: !!resyncTimer,
+        lastError: debugState.lastError
+      });
+    } catch (_) {
+    }
   }
   function promptLogoChoice(shadow, toastFn) {
     const current = readLogoSetting();
@@ -25112,7 +25250,7 @@ ${DIVIDER}
     const adapter = pickAdapter();
     if (!adapter) return;
     booted = true;
-    const version2 = true ? "0.4.3" : "dev";
+    const version2 = true ? "0.5.3" : "dev";
     console.log(`[ai-copy] active on ${adapter.name} v${version2}`);
     mountFloatingButton(adapter);
     mountPerMessageButtons(adapter);

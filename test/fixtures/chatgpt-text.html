@@ -1,0 +1,51 @@
+<!doctype html>
+<!-- ChatGPT 2026 UI: the two visible "ChatGPT" text slots outside the logo.
+     Saved from live pages (3b6dde11 / ddba4b01 / c2e1db12). The composer
+     placeholder is a ProseMirror <p class="placeholder" data-placeholder="…">
+     left EMPTY — every build so far renders its visible copy through a
+     PSEUDO-ELEMENT reading the attribute: the old saved pages used an
+     unscoped .placeholder:before{content:attr(data-placeholder)}, the
+     current build uses
+     .wcDTda_prosemirror-parent.default-browser .placeholder:after{--tw-content:attr(data-placeholder);content:var(--tw-content)}
+     (Firefox gets a :before variant). The swap therefore mutates the
+     attribute AND injects a content-override only for the pseudo-element
+     getComputedStyle shows is actually rendering (computed style is not
+     available under linkedom, so the injection path is tested with a stub).
+     p #2 below is a defensive variant carrying the copy as real text, in
+     case a future build goes back to text rendering. The disclaimer pill is
+     a plain text node inside [data-testid=thread-disclaimer]. The sr-only
+     turn label and the conversation body are here to prove the swap never
+     touches them. -->
+<html lang="zh">
+<head>
+  <title>ChatGPT</title>
+  <style>
+    .wcDTda_prosemirror-parent.default-browser .placeholder:after{pointer-events:none;cursor:text;color:var(--text-tertiary);--tw-content:attr(data-placeholder);content:var(--tw-content);padding-left:1px;position:relative}
+    .wcDTda_prosemirror-parent.firefox .placeholder:before{pointer-events:none;cursor:text;color:var(--text-tertiary);--tw-content:attr(data-placeholder);content:var(--tw-content);padding-left:1px;position:absolute}
+  </style>
+</head>
+<body>
+  <div class="flex h-full flex-col">
+    <form id="composer-form" class="composer">
+      <div class="wcDTda_prosemirror-parent default-browser">
+        <textarea dir="auto" class="wcDTda_fallbackTextarea" name="prompt-textarea" autocomplete="off" inputmode="text" placeholder="问问 ChatGPT" aria-label="与 ChatGPT 聊天" style="display:none"></textarea>
+        <div class="ProseMirror" id="prompt-textarea" contenteditable="true" role="textbox" aria-multiline="true" aria-label="与 ChatGPT 聊天">
+          <p dir="auto" data-empty-paragraph="true" data-placeholder="问问 ChatGPT" class="placeholder"><br class="ProseMirror-trailingBreak"></p>
+          <p dir="auto" data-empty-paragraph="true" data-placeholder="问问 ChatGPT" class="placeholder">问问 ChatGPT<br class="ProseMirror-trailingBreak"></p>
+        </div>
+      </div>
+    </form>
+    <div data-testid="thread-disclaimer" style="height:auto;opacity:1">
+      <div class="min-h-9 pt-2 text-center text-xs text-token-text-tertiary pb-4 relative overflow-hidden">
+        <div class="pointer-events-none w-full">
+          <div class="text-caption-regular text-token-text-tertiary pointer-events-auto mx-auto w-fit max-w-full">
+            <div>ChatGPT 也可能会犯错。请核查重要信息。</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <h4 class="sr-only select-none">ChatGPT 说：</h4>
+    <div class="markdown"><p>ChatGPT 是一个对话式 AI。</p></div>
+  </div>
+</body>
+</html>

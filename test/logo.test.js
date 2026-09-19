@@ -9,6 +9,7 @@ import { LOGO_KEY, BRANDS, applyLogo, restoreLogos, readLogoSetting } from '../s
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const geminiFixture = readFileSync(join(__dirname, 'fixtures/gemini-logo.html'), 'utf8');
 const chatgptFixture = readFileSync(join(__dirname, 'fixtures/chatgpt-logo.html'), 'utf8');
+const chatgptTextFixture = readFileSync(join(__dirname, 'fixtures/chatgpt-text.html'), 'utf8');
 
 // Minimal localStorage shim so readLogoSetting can be exercised in Node.
 const store = new Map();
@@ -261,6 +262,192 @@ test('ChatGPT: switching brand re-swaps the clones in place', () => {
   assert.equal(clone.getAttribute('data-ai-copy-logo'), 'deepseek');
   assert.equal(clone.querySelector('path').getAttribute('fill'), BRANDS.deepseek.inlineFill);
   assert.equal(doc.querySelector('.header-wordmark[data-ai-copy-logo]').textContent, 'DeepSeek');
+});
+
+test('ChatGPT: composer placeholder + thread disclaimer follow the brand name', () => {
+  const doc = parse(chatgptTextFixture);
+  applyLogo(doc, CHATGPT_HOST, 'kimi');
+
+  // Placeholder: attribute swapped in place (feeds the site's
+  // content:attr(data-placeholder) rules), and any real text inside the p
+  // rewritten. Under linkedom there is no computed style, so no override
+  // <style> is injected here (the pseudo-detection path has its own stub
+  // test below).
+  const [pAttrOnly, pWithText] = doc.querySelectorAll('p[data-placeholder]');
+  assert.equal(pAttrOnly.getAttribute('data-placeholder'), '问问 Kimi');
+  assert.equal(pWithText.getAttribute('data-placeholder'), '问问 Kimi');
+  assert.equal(pWithText.textContent, '问问 Kimi', 'real placeholder text rewritten');
+
+  // Disclaimer: the text node inside the pill is rewritten in place.
+  const box = doc.querySelector('[data-testid="thread-disclaimer"]');
+  assert.equal(box.textContent.trim(), 'Kimi 也可能会犯错。请核查重要信息。');
+
+  // Nothing else carrying the name may be touched: the sr-only turn label,
+  // the conversation body, and the aria-labels stay exactly as the site has
+  // them (the display:none fallback textarea's placeholder too).
+  assert.equal(doc.querySelector('h4.sr-only').textContent, 'ChatGPT 说：');
+  assert.equal(doc.querySelector('.markdown p').textContent, 'ChatGPT 是一个对话式 AI。');
+  assert.equal(doc.querySelector('#prompt-textarea').getAttribute('aria-label'), '与 ChatGPT 聊天');
+  assert.equal(doc.querySelector('textarea[name="prompt-textarea"]').getAttribute('placeholder'), '问问 ChatGPT');
+});
+
+test('ChatGPT: the content-override targets only the pseudo the site renders', () => {
+  const doc = parse(chatgptTextFixture);
+  // Current build (c2e1db12): the placeholder renders via ::after under the
+  // .default-browser scope; ::before belongs to the .firefox variant and is
+  // inert on Chrome. Simulate the browser's computed style.
+  globalThis.getComputedStyle = (el, pseudo) =>
+    ({ content: pseudo === '::after' ? '"问问 ChatGPT"' : 'none' });
+  try {
+    applyLogo(doc, CHATGPT_HOST, 'kimi');
+  } finally {
+    delete globalThis.getComputedStyle;
+  }
+
+  const style = doc.querySelector('style[data-ai-copy-text]');
+  assert.ok(style, 'override style injected');
+  // Keyed on the ORIGINAL attribute value: the rule keeps hitting whenever
+  // ProseMirror's placeholder decoration resets the attribute.
+  assert.match(style.textContent,
+    /\[data-placeholder="问问 ChatGPT"\]::after\{content:"问问 Kimi"!important\}/);
+  assert.doesNotMatch(style.textContent, /::before/, 'no ::before rule: the site renders ::after only');
+
+  // Re-brand rewrites the rule from the remembered original.
+  globalThis.getComputedStyle = (el, pseudo) =>
+    ({ content: pseudo === '::after' ? '"问问 ChatGPT"' : 'none' });
+  try {
+    applyLogo(doc, CHATGPT_HOST, 'deepseek');
+  } finally {
+    delete globalThis.getComputedStyle;
+  }
+  assert.match(doc.querySelector('style[data-ai-copy-text]').textContent,
+    /\[data-placeholder="问问 ChatGPT"\]::after\{content:"问问 DeepSeek"!important\}/);
+});
+
+test('ChatGPT: the override rule self-disables once the placeholder is gone', () => {
+  const doc = parse(chatgptTextFixture);
+  applyLogo(doc, CHATGPT_HOST, 'kimi');
+  const p = doc.querySelector('p[data-placeholder]');
+  // The user typed: ProseMirror drops data-placeholder (and the p's emptiness).
+  p.removeAttribute('data-placeholder');
+  applyLogo(doc, CHATGPT_HOST, 'kimi');
+  // The rule is keyed on [data-placeholder=…], so it matches nothing — no
+  // stale decoration on typed text.
+  const style = doc.querySelector('style[data-ai-copy-text]');
+  assert.ok(!style || !style.textContent.includes('::after'),
+    'no override left without a placeholder');
+});
+
+test('ChatGPT: text swap is idempotent and re-brandable in place', () => {
+  const doc = parse(chatgptTextFixture);
+  applyLogo(doc, CHATGPT_HOST, 'kimi');
+  const box = doc.querySelector('[data-testid="thread-disclaimer"]');
+
+  applyLogo(doc, CHATGPT_HOST, 'kimi');
+  assert.equal(box.textContent.trim(), 'Kimi 也可能会犯错。请核查重要信息。', 'disclaimer settles');
+  assert.equal(doc.querySelector('p[data-placeholder]').getAttribute('data-placeholder'),
+    '问问 Kimi', 'placeholder settles');
+
+  applyLogo(doc, CHATGPT_HOST, 'deepseek');
+  assert.equal(box.textContent.trim(), 'DeepSeek 也可能会犯错。请核查重要信息。', 're-brand from the remembered original');
+  assert.equal(doc.querySelector('p[data-placeholder]').getAttribute('data-placeholder'),
+    '问问 DeepSeek', 'placeholder re-branded from the remembered original');
+  assert.equal([...doc.querySelectorAll('p[data-placeholder]')][1].textContent, '问问 DeepSeek');
+});
+
+test('ChatGPT: a re-rendered disclaimer (fresh text node with the site copy) is re-swapped', () => {
+  const doc = parse(chatgptTextFixture);
+  applyLogo(doc, CHATGPT_HOST, 'kimi');
+  const inner = doc.querySelector('[data-testid="thread-disclaimer"] .text-caption-regular');
+  // React re-render: the old div (and its swapped text node) is replaced by a
+  // fresh div carrying the site's original copy from React's state.
+  inner.firstElementChild.remove();
+  const fresh = doc.createElement('div');
+  fresh.textContent = 'ChatGPT 也可能会犯错。请核查重要信息。';
+  inner.appendChild(fresh);
+
+  applyLogo(doc, CHATGPT_HOST, 'kimi');
+  assert.equal(doc.querySelector('[data-testid="thread-disclaimer"]').textContent.trim(),
+    'Kimi 也可能会犯错。请核查重要信息。');
+});
+
+test('ChatGPT: a re-rendered placeholder (ProseMirror reset) is re-swapped', () => {
+  const doc = parse(chatgptTextFixture);
+  applyLogo(doc, CHATGPT_HOST, 'kimi');
+  const pm = doc.querySelector('#prompt-textarea');
+  // ProseMirror re-render: a fresh p with the site's original copy.
+  pm.querySelector('p[data-placeholder]').remove();
+  const fresh = doc.createElement('p');
+  fresh.className = 'placeholder';
+  fresh.setAttribute('data-placeholder', '问问 ChatGPT');
+  fresh.textContent = '问问 ChatGPT';
+  pm.appendChild(fresh);
+
+  applyLogo(doc, CHATGPT_HOST, 'kimi');
+  assert.equal(fresh.getAttribute('data-placeholder'), '问问 Kimi', 'attribute re-swapped');
+  assert.equal(fresh.textContent, '问问 Kimi', 'text re-swapped');
+});
+
+test('ChatGPT: the disclaimer swap is locale-agnostic (en copy works too)', () => {
+  const doc = parse(chatgptTextFixture);
+  doc.querySelector('[data-testid="thread-disclaimer"] .text-caption-regular')
+    .textContent = 'ChatGPT can make mistakes. Check for important info.';
+
+  applyLogo(doc, CHATGPT_HOST, 'kimi');
+  assert.equal(doc.querySelector('[data-testid="thread-disclaimer"]').textContent.trim(),
+    'Kimi can make mistakes. Check for important info.');
+});
+
+test('ChatGPT: restoreLogos puts the placeholder + disclaimer back', () => {
+  const doc = parse(chatgptTextFixture);
+  applyLogo(doc, CHATGPT_HOST, 'deepseek');
+  globalThis.getComputedStyle = (el, pseudo) =>
+    ({ content: pseudo === '::after' ? '"问问 ChatGPT"' : 'none' });
+  try {
+    applyLogo(doc, CHATGPT_HOST, 'kimi');
+    restoreLogos(doc);
+  } finally {
+    delete globalThis.getComputedStyle;
+  }
+
+  assert.equal(doc.querySelector('style[data-ai-copy-text]'), null, 'override style removed');
+  assert.equal(doc.querySelector('[data-testid="thread-disclaimer"]').textContent.trim(),
+    'ChatGPT 也可能会犯错。请核查重要信息。', 'disclaimer restored');
+  const [pAttrOnly, pWithText] = doc.querySelectorAll('p[data-placeholder]');
+  assert.equal(pAttrOnly.getAttribute('data-placeholder'), '问问 ChatGPT', 'attr-only variant restored');
+  assert.equal(pWithText.getAttribute('data-placeholder'), '问问 ChatGPT', 'text variant attribute restored');
+  assert.equal(pWithText.textContent, '问问 ChatGPT', 'text variant real text restored');
+
+  applyLogo(doc, CHATGPT_HOST, 'kimi');
+  assert.equal(doc.querySelector('p[data-placeholder]').getAttribute('data-placeholder'),
+    '问问 Kimi', 're-applies after restore');
+});
+
+test('ChatGPT text swap: other hosts are a no-op', () => {
+  const doc = parse(chatgptTextFixture);
+  applyLogo(doc, 'gemini.google.com', 'kimi');
+  applyLogo(doc, 'kimi.moonshot.cn', 'deepseek');
+  const p = doc.querySelector('p[data-placeholder]');
+  assert.equal(p.getAttribute('data-placeholder'), '问问 ChatGPT');
+  assert.match(doc.querySelector('[data-testid="thread-disclaimer"]').textContent.trim(), /^ChatGPT/);
+});
+
+test('ChatGPT: one failing step does not block the others', () => {
+  const doc = parse(chatgptTextFixture);
+  // Simulate a live-DOM exception in the disclaimer step (e.g. React raced
+  // our write); the placeholder step must still have been applied.
+  const qsa = doc.querySelectorAll.bind(doc);
+  doc.querySelectorAll = (sel) => {
+    if (String(sel).includes('thread-disclaimer')) throw new TypeError('boom');
+    return qsa(sel);
+  };
+  try {
+    applyLogo(doc, CHATGPT_HOST, 'kimi');
+  } finally {
+    delete doc.querySelectorAll;
+  }
+  assert.equal(doc.querySelector('p[data-placeholder]').getAttribute('data-placeholder'),
+    '问问 Kimi', 'placeholder swapped despite the disclaimer step throwing');
 });
 
 test('unsupported host is a no-op', () => {

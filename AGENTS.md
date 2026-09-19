@@ -42,7 +42,7 @@ across platforms. Do not "optimise" by short-circuiting this pipeline.
 | `src/clipboard.js` | **Stage 3.** `copyForOneNote(html, text)` — `ClipboardItem` write with `execCommand` fallback. |
 | `src/i18n.js` | Bilingual string table (zh/en) + `t(key, vars)`. Locale detected once from `navigator.language` (`zh*` → zh, else en). |
 | `src/ui.js` | FAB (with a hover-revealed tool cluster: gear = code font, swatch = site logo), per-message buttons, native-toolbar injection, toast. All in a Shadow DOM. |
-| `src/logo.js` | Optional site-logo swap (`ai-copy-logo` setting): replaces Gemini's sparkle `<img>` / ChatGPT's blossom + wordmark with the Kimi or DeepSeek mark (embedded simple-icons paths, self-contained). Unset = zero DOM writes. Runs at boot + a debounced MutationObserver + a settle-based `setInterval` safety net (SPA re-renders; swaps EVERY logo instance, not just the first). |
+| `src/logo.js` | Optional brand disguise (`ai-copy-logo` setting): replaces Gemini's sparkle `<img>` / ChatGPT's blossom + wordmark with the Kimi or DeepSeek mark (embedded simple-icons paths, self-contained), and on ChatGPT also renames the composer placeholder ("问问 ChatGPT") + thread disclaimer pill to the brand name. Unset = zero DOM writes. Runs at boot + a debounced MutationObserver + a settle-based `setInterval` safety net (SPA re-renders; swaps EVERY logo instance, not just the first). |
 | `src/platforms/base.js` | Adapter contract + `queryFirst` / `queryAll` fallback helpers. |
 | `src/platforms/*.js` | One adapter per platform. ChatGPT & Gemini are calibrated; the rest are heuristic fallbacks. |
 | `test/` | Node `node:test` suite. Converter/renderer/pipeline run via linkedom; adapters run against `test/fixtures/*.html`. |
@@ -277,6 +277,39 @@ esbuild define) so a stale Tampermonkey install is easy to spot.
   there. The `#blossom` svg exists solely inside the collapsed rail's
   "打开侧边栏" button (invisible while the sidebar is expanded). Fixture:
   `test/fixtures/chatgpt-logo.html`.
+- *Text disguise (same setting):* the two visible "ChatGPT" text slots follow
+  the brand name — the composer placeholder and the thread disclaimer pill
+  (`[data-testid=thread-disclaimer]`, swapped as an in-place React text-node
+  rewrite, locale-agnostic via a name-contains guard). The placeholder's
+  visible copy is rendered through a PSEUDO-ELEMENT reading
+  `data-placeholder`, and WHICH pseudo changed across builds (old pages:
+  unscoped `.placeholder:before{content:attr(data-placeholder)}`; current:
+  `.wcDTda_prosemirror-parent.default-browser .placeholder:after` via
+  `--tw-content:attr(...)`, Firefox a `:before` variant). So three
+  complementary in-place writes, never a blind CSS injection (injecting
+  `::before` on the current build double-rendered "问问 Kimi问问 ChatGPT",
+  regression screenshot 2026-09): (1) mutate the `data-placeholder`
+  attribute; (2) rewrite any real text inside the p; (3) inject a
+  `content:"…"` override rule keyed on the placeholder's ORIGINAL attribute
+  value, injected ONLY for the pseudo-element(s) `getComputedStyle` shows
+  are actually rendering. Keying on the original value is what survives
+  ProseMirror's placeholder decoration resetting the attribute between
+  settle passes (live regression 2026-09: an attr swap alone never stuck);
+  the rule keeps hitting in every attribute state and self-disables while
+  typing, when the p loses the attribute. Deliberately untouched: the
+  conversation body (copy output must stay byte-exact), the sr-only
+  "ChatGPT 说：" turn labels, aria-labels, and the display:none fallback
+  `<textarea placeholder=…>`. Regression fixtures:
+  `test/fixtures/chatgpt-text.html` (carries both placeholder variants; the
+  pseudo-override path is tested with a getComputedStyle stub).
+- *Apply isolation:* every independent step of `swapChatGPT` (blossom loop,
+  wordmark loop, placeholder, disclaimer) runs in its own try/catch behind
+  detached-node guards (`isConnected`, `ensureClone`'s parent check) — React
+  can detach a scanned node between our scan and our write, and one step's
+  exception used to kill the whole pass, so a slot mounted later never got
+  swapped. Failures are recorded silently and surfaced by the opt-in
+  `window.__aiCopyLogoDebug()` console hook (version, choice, current
+  placeholder values, style injected, observer/interval active, lastError).
 - *FAB host:* `createShadowRoot()` in `src/ui.js` appends the host under
   `<body>`, never `<html>` — a stray div directly under `<html>` gets wiped
   by the site's cleanup passes some time after boot, which made the FAB
@@ -347,6 +380,6 @@ recalibrating a platform, save a fixture and add an adapter test.
 ## Commit / PR conventions
 
 - Build before committing if `src/` changed: `npm run build`, then commit both.
-- Run `npm test` before pushing — 142 tests should all pass.
+- Run `npm test` before pushing — 153 tests should all pass.
 - Keep the userscript header version in `build.mjs` in sync with
   `package.json` if you bump versions.
