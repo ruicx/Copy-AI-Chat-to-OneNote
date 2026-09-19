@@ -351,6 +351,87 @@ function katexAnnotationTex(node) {
   return { tex, display };
 }
 
+// --- Kimi ---------------------------------------------------------------------
+// Kimi (www.kimi.com, calibrated 2026-09) renders markdown through Vue
+// components with semantic-but-nonstandard wrappers (fixture
+// test/fixtures/kimi-sample.html):
+//
+//   - Paragraphs are <div class="paragraph"> (NOT <p>). Left to the generic
+//     div flattening, consecutive paragraphs fuse onto one line.
+//   - Code blocks: <div class="segment-code">
+//       <div class="sticky-release">…header bar: <span
+//         class="segment-code-lang">JavaScript</span> + 复制 button…</div>
+//       <div class="syntax-highlighter …"><pre class="language-…">…</pre></div>
+//     Left alone, the header text ("JavaScript 复制") leaks in front of the
+//     fence.
+//   - Tables: <div class="markdown-table"> = header bar ("表格 复制") +
+//       <div class="table-container"><table>…real table…</table></div>.
+//     The inner table converts fine; only the header must be dropped.
+//   - Math: KaTeX with output:'html' ONLY — span.katex-wrapper >
+//     span.katex-container > span.katex > span.katex-html. There is NO
+//     MathML twin, NO annotation[encoding=…], NO data-math: the raw LaTeX
+//     is unrecoverable from the DOM. We degrade honestly: keep the
+//     linearized glyphs as plain text and give display math (math-display
+//     class) its own line. Do NOT emit $…$ — the glyphs are not LaTeX and
+//     the math renderer would mangle them.
+const KIMI_PARAGRAPH_CLASS = /(^|\s)paragraph(\s|$)/;
+const KIMI_TABLE_CLASS = /(^|\s)markdown-table(\s|$)/;
+const KIMI_CODE_CLASS = /(^|\s)segment-code(\s|$)/;
+const KIMI_MATH_CLASS = /(^|\s)katex-wrapper(\s|$)/;
+
+function kimiClassMatch(node, re) {
+  if (!node.getAttribute) return false;
+  if (node.tagName && node.tagName.toLowerCase() !== 'div') return false;
+  return re.test(node.getAttribute('class') || '');
+}
+
+function isKimiParagraph(node) {
+  return kimiClassMatch(node, KIMI_PARAGRAPH_CLASS);
+}
+
+function isKimiTable(node) {
+  return kimiClassMatch(node, KIMI_TABLE_CLASS);
+}
+
+function isKimiCodeBlock(node) {
+  return kimiClassMatch(node, KIMI_CODE_CLASS);
+}
+
+function kimiCodeBlockToMd(node) {
+  const pre = node.querySelector('pre');
+  const codeEl = node.querySelector('code');
+  const raw = ((codeEl || pre || node).textContent || '').replace(/\n$/, '');
+  // Language: the code/pre carries `language-…`; fall back to the header's
+  // .segment-code-lang label ("JavaScript"), token-guarded like the other
+  // platforms so a structural surprise degrades to a bare fence.
+  let lang = '';
+  for (const el of [codeEl, pre]) {
+    const m = el && (el.getAttribute('class') || '').match(/language-([\w+#.-]+)/);
+    if (m) { lang = m[1]; break; }
+  }
+  if (!lang) {
+    const label = (node.querySelector('.segment-code-lang')?.textContent || '').trim();
+    if (/^[\w+#.-]{1,24}$/.test(label)) lang = label;
+  }
+  return withFreshLine('```' + lang + '\n' + raw + '\n```\n\n');
+}
+
+function kimiTableToMd(node, ctx) {
+  const table = node.querySelector('table');
+  return table ? withFreshLine(tableToMd(table, ctx)) : '';
+}
+
+function kimiMathFallback(node) {
+  if (!node.getAttribute) return null;
+  const cls = node.getAttribute('class') || '';
+  if (!KIMI_MATH_CLASS.test(cls)) return null;
+  const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  return /(^|\s)math-display(\s|$)/.test(cls)
+    ? withFreshLine(text + '\n\n')
+    : text;
+}
+
 // --- core recursive converter ---------------------------------------------
 function nodeToMd(node, ctx) {
   if (!node) return '';
@@ -411,6 +492,18 @@ function nodeToMd(node, ctx) {
     return katex.display
       ? withFreshLine(`$$${katex.tex}$$\n\n`)
       : `$${katex.tex}$`;
+  }
+
+  // Kimi's nonstandard markdown wrappers (paragraph/code/table/math) — see
+  // the Kimi section below. Ordinary divs/spans, so intercept before the
+  // INLINE table / switch.
+  if (isKimiCodeBlock(node)) return kimiCodeBlockToMd(node);
+  if (isKimiTable(node)) return kimiTableToMd(node, ctx);
+  const kimiMath = kimiMathFallback(node);
+  if (kimiMath !== null) return kimiMath;
+  if (isKimiParagraph(node)) {
+    const inner = childrenToMd(node, ctx).trim();
+    return inner ? withFreshLine(`${inner}\n\n`) : '';
   }
 
   // Inline elements

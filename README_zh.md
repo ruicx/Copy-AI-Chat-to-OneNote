@@ -78,16 +78,16 @@ AI 平台自带的复制按钮输出的是 Markdown 或夹带框架样式的 HTM
 | Gemini | ✅ 已校准 | `<user-query>`/`<model-response>` 自定义元素、`<code-block>`、图片包在 `<button>` 里、克隆 `<gem-icon-button>` 工具栏按钮匹配 Material 风格。 |
 | Claude | ⚠️ 启发式兜底 | `[data-testid="user-message"]` + `[class*="prose"]`。依赖前请先校准。 |
 | DeepSeek | ✅ 已校准 | `.ds-message` 轮次 + `.ds-markdown` 内容。原生工具栏注入（克隆 `ds-button`，插在站点复制按钮旁）。公式走 KaTeX annotation、代码块走 `md-code-block` 拦截。 |
-| Kimi | ⚠️ 启发式兜底 | `[class*="bubble"]`。依赖前请先校准。 |
+| Kimi | ✅ 已校准 | `.segment-user` / `.segment-assistant` 轮次。原生工具栏注入（克隆 `simple-button` / `icon-button`，插在站点复制按钮旁）。`div.paragraph` / `segment-code` / `markdown-table` 走转换器拦截；公式降级为线性化文本（Kimi 的 KaTeX 不在 DOM 里保留 LaTeX 源码）。 |
 | 豆包 | ⚠️ 启发式兜底 | `[class*="message-item"]`。依赖前请先校准。 |
 
-> Claude / Kimi / 豆包 的选择器是启发式兜底，首次使用前请用 DevTools 校准——见 [`docs/selector-notes.md`](./docs/selector-notes.md)。
+> Claude / 豆包 的选择器是启发式兜底，首次使用前请用 DevTools 校准——见 [`docs/selector-notes.md`](./docs/selector-notes.md)。
 
 ## 开发
 
 ```bash
 npm install          # 装依赖（marked、esbuild、linkedom）
-npm test             # 跑全部自动化测试（174 个）
+npm test             # 跑全部自动化测试（189 个）
 npm run build        # 重新打包 ai-chat-copy.user.js（强制 LF）
 ```
 

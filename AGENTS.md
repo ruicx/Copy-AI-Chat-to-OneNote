@@ -44,7 +44,7 @@ across platforms. Do not "optimise" by short-circuiting this pipeline.
 | `src/ui.js` | FAB (with a hover-revealed tool cluster: gear = code font, swatch = site logo), per-message buttons, native-toolbar injection, toast. All in a Shadow DOM. |
 | `src/logo.js` | Optional brand disguise (`ai-copy-logo` setting): replaces Gemini's sparkle `<img>` / ChatGPT's blossom + wordmark with the Kimi or DeepSeek mark (embedded simple-icons paths, self-contained), and renames the composer placeholder + disclaimer pill on BOTH hosts to the brand name. Unset = zero DOM writes. Runs at boot + a debounced MutationObserver + a settle-based `setInterval` safety net (SPA re-renders; swaps EVERY logo instance, not just the first). |
 | `src/platforms/base.js` | Adapter contract + `queryFirst` / `queryAll` fallback helpers. |
-| `src/platforms/*.js` | One adapter per platform. ChatGPT, Gemini & DeepSeek are calibrated; the rest are heuristic fallbacks. |
+| `src/platforms/*.js` | One adapter per platform. ChatGPT, Gemini, DeepSeek & Kimi are calibrated; the rest are heuristic fallbacks. |
 | `test/` | Node `node:test` suite. Converter/renderer/pipeline run via linkedom; adapters run against `test/fixtures/*.html`. |
 
 ## Adapter contract (`src/platforms/base.js`)
@@ -301,6 +301,46 @@ conversation; code bodies truncated, decorative svg paths shortened,
 - Untouched/unsupported: `ds-markdown-cite` markers (none observed in the
   calibration page), R1 thinking blocks (no fixture), search-result cards.
 
+## Kimi-specific notes (calibrated 2026-09)
+
+Kimi's web app moved to **www.kimi.com** (the adapter keeps
+`kimi.moonshot.cn` for older installs). Calibrated against a saved live page;
+fixture `test/fixtures/kimi-sample.html` (extracted from an "OneNote测试"
+conversation; code bodies truncated, all but one inline/display math wrapper
+removed). Kimi is a Vue/Nuxt app — cloned buttons must KEEP their `data-v-…`
+scoped-CSS attributes or the styles won't apply.
+
+- Turns are `div.segment.segment-user` / `div.segment.segment-assistant`.
+  User content is plain text (`span.user-content__text`); assistant content is
+  the `.markdown` that is NOT inside `.thinking-container`/`.toolcall-flow`
+  (those hold the reasoning and tool-call rollups, which also contain their
+  own `.markdown` — taking the first `.markdown` naively copies the thinking).
+  NOTE: `turns()` must use a comma-union `querySelectorAll`, NOT base.js
+  `queryAll` (a fallback list — first match wins would drop the assistant
+  segments).
+- Native action bars: user [Edit][Copy][Share] as `.simple-button`s; assistant
+  [Copy] (+ more behind hover) as `.icon-button`s — two different button
+  components. Both wrap an iconified `<svg name="IconName">`; the anchor is
+  the button wrapping `svg[name="Copy"]` (both roles). `makeNativeButton`
+  clones the bar's own button and swaps the svg, preserving its class.
+- Converter intercepts (Kimi section in `src/converter.js`):
+  - `div.paragraph` — paragraphs are DIVs, not `<p>`; left generic they fuse
+    onto one line.
+  - `div.segment-code` — header bar (`.segment-code-lang` label + 复制
+    button) above `.syntax-highlighter > pre.language-… > code`. The
+    `language-` class exists on BOTH pre and code.
+  - `div.markdown-table` — a header bar ("表格 复制") plus a REAL `<table>`
+    inside `.table-container`; only the header must be dropped.
+  - `span.katex-wrapper` math — KaTeX with output:'html' ONLY: no MathML
+    twin, no `annotation`, no `data-math` — the raw LaTeX is unrecoverable
+    from the DOM. Honest degradation: keep the linearized glyphs as text,
+    own line for display (`math-display`). Do NOT emit `$…$` (the glyphs
+    are not LaTeX; Temml would mangle them).
+- Task lists come through as literal `[x] ` / `[ ] ` text in the li — kept
+  as-is, which marked's GFM then renders as ☑/☐ (same as real task syntax).
+- Untouched/unsupported: search-result cards (`okc-cards-container`),
+  mermaid diagrams, chat-entry UI chrome.
+
 ## ChatGPT-specific note
 
 ChatGPT's adapter has **no** `tooltipStyle` / `makeNativeButton` — it uses the
@@ -446,6 +486,6 @@ recalibrating a platform, save a fixture and add an adapter test.
 ## Commit / PR conventions
 
 - Build before committing if `src/` changed: `npm run build`, then commit both.
-- Run `npm test` before pushing — 174 tests should all pass.
+- Run `npm test` before pushing — 189 tests should all pass.
 - Keep the userscript header version in `build.mjs` in sync with
   `package.json` if you bump versions.

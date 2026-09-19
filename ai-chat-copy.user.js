@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI 对话一键复制到 OneNote
 // @namespace    https://github.com/ruicx/Copy-AI-Chat-to-OneNote
-// @version      0.5.5
+// @version      0.5.6
 // @description  Copy AI Chat (ChatGPT/Gemini/Claude/DeepSeek/Kimi/Doubao) content to OneNote with a single click. Support Markdown, code blocks, and images. Copy the entire conversation or just the latest message. Compatible with Tampermonkey and Violentmonkey.
 // @author       ruicx
 // @match        https://gemini.google.com/*
@@ -1582,20 +1582,20 @@
   });
 
   // src/platforms/base.js
-  function queryFirst(selectorList, root3 = document) {
+  function queryFirst(selectorList, root2 = document) {
     for (const sel of selectorList) {
       try {
-        const el = root3.querySelector(sel);
+        const el = root2.querySelector(sel);
         if (el) return el;
       } catch (_) {
       }
     }
     return null;
   }
-  function queryAll(selectorList, root3 = document) {
+  function queryAll(selectorList, root2 = document) {
     for (const sel of selectorList) {
       try {
-        const els = root3.querySelectorAll(sel);
+        const els = root2.querySelectorAll(sel);
         if (els.length) return Array.from(els);
       } catch (_) {
       }
@@ -1686,10 +1686,10 @@
   }
 
   // src/platforms/gemini.js
-  function turns(root3) {
-    const merged = [...root3.querySelectorAll("user-query, model-response")];
+  function turns(root2) {
+    const merged = [...root2.querySelectorAll("user-query, model-response")];
     if (merged.length) return merged;
-    return [...root3.querySelectorAll('[class*="conversation-turn"]')];
+    return [...root2.querySelectorAll('[class*="conversation-turn"]')];
   }
   function contentOf2(turn) {
     const tag2 = turn.tagName.toLowerCase();
@@ -1950,47 +1950,127 @@
   };
 
   // src/platforms/kimi.js
-  function root() {
-    return queryFirst(['[class*="chat"]', "main", "body"]);
+  function turns4() {
+    return [...document.querySelectorAll(".segment-user, .segment-assistant")];
   }
-  function allTurns() {
-    return queryAll(['[class*="bubble"]', '[class*="message-item"]', '[class*="row"]'], root());
+  function roleOf3(seg) {
+    return /(^|\s)segment-user(\s|$)/.test(seg.getAttribute("class") || "") ? "user" : "assistant";
+  }
+  function contentOf4(seg) {
+    if (roleOf3(seg) === "user") {
+      return seg.querySelector(".user-content__text") || seg.querySelector(".user-content") || seg;
+    }
+    const md = [...seg.querySelectorAll(".markdown")].find(
+      (m) => !m.closest(".thinking-container, .toolcall-flow")
+    );
+    return md || seg.querySelector(".markdown") || seg;
+  }
+  function nativeCopyButton(bar) {
+    const svg = bar.querySelector('svg[name="Copy"]');
+    if (!svg) return void 0;
+    return svg.closest(".simple-button, .icon-button") || svg.parentElement;
   }
   var kimi_default = {
-    host: ["kimi.moonshot.cn"],
+    // 2026: Kimi's web app moved to www.kimi.com; kimi.moonshot.cn kept for
+    // older installs / redirects.
+    host: ["www.kimi.com", "kimi.moonshot.cn"],
     name: "Kimi",
     getMessageElements() {
-      return allTurns();
+      return turns4();
     },
     getRole(el) {
-      const hint = el.className || "";
-      if (/user|self|query/i.test(hint)) return "user";
-      return "assistant";
+      return roleOf3(el);
     },
     getMessages() {
-      return allTurns().map((el) => {
-        const role = this.getRole(el);
-        const content = el.querySelector(".markdown") || el.querySelector('[class*="markdown"]') || el;
-        return { role, el: content };
-      });
+      return turns4().map((seg) => ({ role: roleOf3(seg), el: contentOf4(seg) }));
+    },
+    /**
+     * Kimi renders a native action bar per turn: assistant [Copy] (+ refresh/
+     * like/dislike/share behind the hover menu), user [Edit] [Copy] [Share].
+     * Our buttons go INTO the bar, right after the native Copy button (both
+     * roles), so they sit beside the site's own 复制.
+     */
+    getNativeToolbars() {
+      const out = [];
+      for (const seg of turns4()) {
+        const role = roleOf3(seg);
+        const bar = role === "user" ? seg.querySelector(".segment-user-actions") : seg.querySelector(".segment-assistant-actions-content") || seg.querySelector(".segment-assistant-actions");
+        if (!bar) continue;
+        out.push({
+          toolbar: bar,
+          content: contentOf4(seg),
+          role,
+          insertAfter: nativeCopyButton(bar)
+        });
+      }
+      return out;
+    },
+    /**
+     * Build a button that matches Kimi's native action-button markup so the
+     * injected buttons blend into the bar. Kimi has two button components —
+     * the user bar uses <div class="simple-button size-small">, the assistant
+     * bar <div class="icon-button" style="width:…">; both wrap an iconified
+     *   <svg class="iconify …" width="16" height="16" name="Icon"><path…/></svg>
+     * We clone an existing button from THIS bar (keeping the Vue data-v-…
+     * scoped-CSS ids and sizing so styling matches) and swap its iconify svg
+     * for our heroicons clipboard, preserving the svg's original classes.
+     */
+    makeNativeButton(toolbar, title, double) {
+      const template = toolbar.querySelector(".simple-button, .icon-button");
+      if (template) {
+        const clone = template.cloneNode(true);
+        clone.removeAttribute("title");
+        clone.removeAttribute("aria-label");
+        const oldSvg = clone.querySelector("svg");
+        const single = "M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184";
+        const doc = "M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5A3.375 3.375 0 0 0 6.375 7.5H5.25m11.9-3.664A2.251 2.251 0 0 0 15 2.25h-1.5a2.251 2.251 0 0 0-2.15 1.586m5.8 0c.065.21.1.433.1.664v.75h-6V4.5c0-.231.035-.454.1-.664M6.75 7.5H4.875c-.621 0-1.125.504-1.125 1.125v12c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V16.5a9 9 0 0 0-9-9Z";
+        if (oldSvg) {
+          const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          for (const [k, v] of Object.entries({
+            class: oldSvg.getAttribute("class") || "iconify",
+            xmlns: "http://www.w3.org/2000/svg",
+            width: "16",
+            height: "16",
+            fill: "none",
+            viewBox: "0 0 24 24",
+            stroke: "currentColor",
+            "stroke-width": "1.5",
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round",
+            "aria-hidden": "true"
+          })) svg.setAttribute(k, v);
+          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          path.setAttribute("d", double ? doc : single);
+          svg.appendChild(path);
+          oldSvg.replaceWith(svg);
+        }
+        clone.setAttribute("aria-label", title);
+        return clone;
+      }
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "simple-button size-small";
+      btn.setAttribute("aria-label", title);
+      btn.textContent = title;
+      return btn;
     }
   };
 
   // src/platforms/doubao.js
-  function root2() {
+  function root() {
     return queryFirst(['[class*="chat"]', "main", "body"]);
   }
-  function allTurns2() {
+  function allTurns() {
     return queryAll(
       ['[class*="message-item"]', '[class*="bubble"]', '[class*="receive"]', '[class*="row"]'],
-      root2()
+      root()
     );
   }
   var doubao_default = {
     host: ["www.doubao.com", "doubao.com"],
     name: "\u8C46\u5305",
     getMessageElements() {
-      return allTurns2();
+      return allTurns();
     },
     getRole(el) {
       const hint = el.className || "";
@@ -1998,7 +2078,7 @@
       return "assistant";
     },
     getMessages() {
-      return allTurns2().map((el) => {
+      return allTurns().map((el) => {
         const role = this.getRole(el);
         const content = el.querySelector('[class*="markdown"]') || el.querySelector('[class*="content"]') || el;
         return { role, el: content };
@@ -2318,6 +2398,54 @@
     const display = /(^|\s)katex-display(\s|$)/.test(cls) || /(^|\s)katex-display(\s|$)/.test(parentCls);
     return { tex, display };
   }
+  var KIMI_PARAGRAPH_CLASS = /(^|\s)paragraph(\s|$)/;
+  var KIMI_TABLE_CLASS = /(^|\s)markdown-table(\s|$)/;
+  var KIMI_CODE_CLASS = /(^|\s)segment-code(\s|$)/;
+  var KIMI_MATH_CLASS = /(^|\s)katex-wrapper(\s|$)/;
+  function kimiClassMatch(node, re) {
+    if (!node.getAttribute) return false;
+    if (node.tagName && node.tagName.toLowerCase() !== "div") return false;
+    return re.test(node.getAttribute("class") || "");
+  }
+  function isKimiParagraph(node) {
+    return kimiClassMatch(node, KIMI_PARAGRAPH_CLASS);
+  }
+  function isKimiTable(node) {
+    return kimiClassMatch(node, KIMI_TABLE_CLASS);
+  }
+  function isKimiCodeBlock(node) {
+    return kimiClassMatch(node, KIMI_CODE_CLASS);
+  }
+  function kimiCodeBlockToMd(node) {
+    const pre = node.querySelector("pre");
+    const codeEl = node.querySelector("code");
+    const raw = ((codeEl || pre || node).textContent || "").replace(/\n$/, "");
+    let lang = "";
+    for (const el of [codeEl, pre]) {
+      const m = el && (el.getAttribute("class") || "").match(/language-([\w+#.-]+)/);
+      if (m) {
+        lang = m[1];
+        break;
+      }
+    }
+    if (!lang) {
+      const label = (node.querySelector(".segment-code-lang")?.textContent || "").trim();
+      if (/^[\w+#.-]{1,24}$/.test(label)) lang = label;
+    }
+    return withFreshLine("```" + lang + "\n" + raw + "\n```\n\n");
+  }
+  function kimiTableToMd(node, ctx) {
+    const table = node.querySelector("table");
+    return table ? withFreshLine(tableToMd(table, ctx)) : "";
+  }
+  function kimiMathFallback(node) {
+    if (!node.getAttribute) return null;
+    const cls = node.getAttribute("class") || "";
+    if (!KIMI_MATH_CLASS.test(cls)) return null;
+    const text2 = (node.textContent || "").replace(/\s+/g, " ").trim();
+    if (!text2) return "";
+    return /(^|\s)math-display(\s|$)/.test(cls) ? withFreshLine(text2 + "\n\n") : text2;
+  }
   function nodeToMd(node, ctx) {
     if (!node) return "";
     const nt = node.nodeType;
@@ -2341,6 +2469,16 @@
       return katex.display ? withFreshLine(`$$${katex.tex}$$
 
 `) : `$${katex.tex}$`;
+    }
+    if (isKimiCodeBlock(node)) return kimiCodeBlockToMd(node);
+    if (isKimiTable(node)) return kimiTableToMd(node, ctx);
+    const kimiMath = kimiMathFallback(node);
+    if (kimiMath !== null) return kimiMath;
+    if (isKimiParagraph(node)) {
+      const inner2 = childrenToMd(node, ctx).trim();
+      return inner2 ? withFreshLine(`${inner2}
+
+`) : "";
     }
     if (tag2 in INLINE) {
       const inner2 = childrenToMd(node, ctx);
@@ -24372,17 +24510,17 @@ ${text2}</tr>
   };
   var BADGE_LABEL = { user: t("badgeUser"), assistant: t("badgeAssistant") };
   function htmlToPlainText(html2) {
-    let root3;
+    let root2;
     if (typeof DOMParser !== "undefined") {
-      root3 = new DOMParser().parseFromString(html2, "text/html").body;
+      root2 = new DOMParser().parseFromString(html2, "text/html").body;
     } else {
-      root3 = document.createElement("div");
-      root3.innerHTML = html2;
+      root2 = document.createElement("div");
+      root2.innerHTML = html2;
     }
-    root3.querySelectorAll("p,div,li,tr,h1,h2,h3,h4,h5,h6").forEach((el) => {
+    root2.querySelectorAll("p,div,li,tr,h1,h2,h3,h4,h5,h6").forEach((el) => {
       el.append("\n");
     });
-    return (root3.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
+    return (root2.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
   }
   function roleBadge(role) {
     const style = BADGE_STYLES[role] || BADGE_STYLES.assistant;
@@ -24635,7 +24773,7 @@ ${DIVIDER}
       if (!prev || !prev.hasAttribute(ORIG_ATTR)) clone.remove();
     }
   }
-  function textNodesIn(root3) {
+  function textNodesIn(root2) {
     const out = [];
     const walk = (node) => {
       for (const child of node.childNodes) {
@@ -24643,7 +24781,7 @@ ${DIVIDER}
         else if (child.nodeType === 1) walk(child);
       }
     };
-    walk(root3);
+    walk(root2);
     return out;
   }
   function cssQuote(s) {

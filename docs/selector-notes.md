@@ -93,9 +93,36 @@
 
 ---
 
-## Kimi / 豆包（待校准 ⚠️）
+## Kimi（已验证 ✅）
 
-均为启发式兜底（`[class*="bubble"]` / `[class*="message-item"]`），首次使用前务必按上述步骤用 DevTools 校准并补夹具测试。
+**核实日期**：2026-09，基于保存的真实页面（"OneNote测试"会话），夹具
+`test/fixtures/kimi-sample.html`，详细说明见 AGENTS.md 的 Kimi 章节。
+注意：Kimi 已迁移到 **www.kimi.com**（适配器保留 kimi.moonshot.cn 兼容）。
+
+**选择器**（`src/platforms/kimi.js`）：
+- 轮次：`div.segment-user` / `div.segment-assistant`（逗号并集查询——
+  base.js 的 queryAll 是兜底列表语义，不能用）
+- 用户内容：`span.user-content__text`（纯文本）
+- 助手内容：不在 `.thinking-container`/`.toolcall-flow` 内的 `.markdown`
+  （thinking 里有自己的 `.markdown`，直接取第一个会拿到思考内容）
+- 原生操作条：用户 [Edit][Copy][Share] 是 `.simple-button`，助手 [Copy]
+  是 `.icon-button`；锚点 = 包着 `svg[name="Copy"]` 的按钮元素
+- 克隆按钮保留 `data-v-*`（Vue scoped CSS 依赖它）
+
+**转换器要点**（`src/converter.js`）：
+- 段落是 `div.paragraph`（不是 `<p>`），需拦截否则黏行
+- 代码块：`div.segment-code`（header 的 `.segment-code-lang` 是语言标签，
+  `pre`/`code` 都带 `language-` 类）
+- 表格：`div.markdown-table` = header + 真 `<table>`，只丢 header
+- 数学：KaTeX 只有 HTML 渲染树（无 MathML/annotation/data-math），LaTeX
+  无法从 DOM 恢复——降级为线性化文本（display 公式独占一行），不输出
+  `$…$`
+
+---
+
+## 豆包（待校准 ⚠️）
+
+启发式兜底（`[class*="message-item"]`），首次使用前务必按上述步骤用 DevTools 校准并补夹具测试。
 
 ---
 
