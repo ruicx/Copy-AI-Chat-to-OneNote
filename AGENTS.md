@@ -42,7 +42,7 @@ across platforms. Do not "optimise" by short-circuiting this pipeline.
 | `src/clipboard.js` | **Stage 3.** `copyForOneNote(html, text)` — `ClipboardItem` write with `execCommand` fallback. |
 | `src/i18n.js` | Bilingual string table (zh/en) + `t(key, vars)`. Locale detected once from `navigator.language` (`zh*` → zh, else en). |
 | `src/ui.js` | FAB (with a hover-revealed tool cluster: gear = code font, swatch = site logo), per-message buttons, native-toolbar injection, toast. All in a Shadow DOM. |
-| `src/logo.js` | Optional site-logo swap (`ai-copy-logo` setting): replaces Gemini's sparkle `<img>` / ChatGPT's blossom + wordmark with the Kimi or DeepSeek mark (embedded simple-icons paths, self-contained). Unset = zero DOM writes. Runs at boot + a debounced MutationObserver (SPA re-renders). |
+| `src/logo.js` | Optional site-logo swap (`ai-copy-logo` setting): replaces Gemini's sparkle `<img>` / ChatGPT's blossom + wordmark with the Kimi or DeepSeek mark (embedded simple-icons paths, self-contained). Unset = zero DOM writes. Runs at boot + a debounced MutationObserver + a settle-based `setInterval` safety net (SPA re-renders; swaps EVERY logo instance, not just the first). |
 | `src/platforms/base.js` | Adapter contract + `queryFirst` / `queryAll` fallback helpers. |
 | `src/platforms/*.js` | One adapter per platform. ChatGPT & Gemini are calibrated; the rest are heuristic fallbacks. |
 | `test/` | Node `node:test` suite. Converter/renderer/pipeline run via linkedom; adapters run against `test/fixtures/*.html`. |
@@ -206,8 +206,12 @@ most fragile part of the codebase. Key things:
   in the switch would never fire) and reads `data-math`; the `.katex` subtree is
   dropped. See invariant #10.
 - Images are wrapped in `<button class="image-button">`. `<button>` is
-  intentionally **not** in `DROP_TAGS`; the converter flattens it only when it
-  contains content, and drops it otherwise.
+  intentionally **not** in `DROP_TAGS`; the converter keeps the button's
+  children when it holds an `<img>`/block content (image-button), keeps its
+  text label as its own block when it carries real text (ChatGPT 2026 rich
+  cards render their 课程官网/公开视频 link pills as `<button>`), and drops
+  it when nothing convertible remains (icon-only action buttons — the svg is
+  dropped, so nothing is left).
 - The native toolbar buttons are cloned from Gemini's own `<gem-icon-button>`
   and its `<mat-icon>` (a lumino font ligature) is **replaced** with a heroicons
   SVG `<span>`. Capture `getComputedStyle(matIcon).fontSize` **before** the
@@ -250,7 +254,21 @@ site's blossom `<svg>` (found via `use[href="#blossom"]`) and
 `data-ai-copy-logo` marker) beside them; originals keep a
 `data-ai-copy-orig` marker so `restoreLogos()` can unhide them. Application
 is settle-based — zero DOM writes once the swap is in place — so the
-MutationObserver never re-triggers itself.
+MutationObserver never re-triggers itself. **Every blossom/wordmark instance
+in the document is swapped** (not just the first): ChatGPT keeps the expanded
+sidebar, the collapsed rail, and mobile variants mounted side by side, and a
+single-slot lookup pinned to the first hidden original left a freshly
+mounted blossom (sidebar collapse re-creates the rail) showing the site logo
+forever (saved-page regression 38bd709d). Because the debounced observer can
+react late or be starved by page churn, a settle-based `setInterval`
+re-apply (~1.5s) acts as a safety net: it writes nothing once settled. If
+both `use[href*=#blossom]` and `symbol#blossom` lookups miss (a future build
+renames the mark), the fallback swaps the first svg inside
+`button[aria-controls="stage-slideover-sidebar"]` — the sidebar container id
+is not localized, the aria-label is. The swap itself is silent (the
+diagnostic per-apply `[ai-copy] logo → …` log was removed in v0.4.3); boot
+still logs `[ai-copy] active on <site> v<version>` (version is a build.mjs
+esbuild define) so a stale Tampermonkey install is easy to spot.
 
 **ChatGPT 2026 UI notes:**
 - *Logo swap:* the expanded sidebar header has no icon element — the 主页
@@ -265,6 +283,20 @@ MutationObserver never re-triggers itself.
   disappear entirely (per-message buttons survive because they live inside
   the message tree). `keepHostAttached()` re-appends the host if anything
   detaches it.
+- *Rich cards (recommendation cards):* assistant messages can embed
+  component-library divs (`data-d-component="box|row|badge|title|text|
+  caption|popover-trigger"`, obfuscated classes like `oIb9lq_Box`) laid out
+  as a **two-column row: thumbnail image column + text column**. All of
+  these flatten inline, and the card's title is an `<h2>` wrapping a
+  one-item `<ol start="N">` (the visible "1./2./…" numbering — `start` must
+  be honored or every card renumbers to "1."). Two converter behaviours
+  exist because of these cards: **block-level emissions guarantee a fresh
+  line** (`withFreshLine()` in `src/converter.js` — blocks that follow
+  inline-flattened divs/spans must not fuse onto the same line, e.g.
+  `重点推荐 · 机器人方向## 2. Stanford CS234…` or `CS 224R+1学习资源`), and
+  **text-bearing `<button>`s keep their label as a block** (the
+  课程官网/公开视频 pills). Regression: convert a saved card page and check
+  that badge/heading/label/button lines are all separate.
 
 ### ChatGPT code blocks: the CodeMirror widget (2026 UI)
 
@@ -315,6 +347,6 @@ recalibrating a platform, save a fixture and add an adapter test.
 ## Commit / PR conventions
 
 - Build before committing if `src/` changed: `npm run build`, then commit both.
-- Run `npm test` before pushing — 108 tests should all pass.
+- Run `npm test` before pushing — 142 tests should all pass.
 - Keep the userscript header version in `build.mjs` in sync with
   `package.json` if you bump versions.

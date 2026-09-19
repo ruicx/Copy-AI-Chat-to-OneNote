@@ -176,6 +176,82 @@ test('ChatGPT: re-applying after React wipes the clones re-inserts them', () => 
   assert.equal(doc.querySelectorAll('.header-wordmark[data-ai-copy-logo]').length, 1);
 });
 
+test('ChatGPT: a blossom React mounts later (sidebar collapse) is swapped even with the stale hidden original present', () => {
+  // Regression from a saved collapsed-sidebar page (38bd709d): the swap ran
+  // while expanded (wordmark clone present), then collapsing re-rendered the
+  // tiny-bar and React mounted a FRESH blossom there — while the old hidden
+  // original survived inside the still-mounted expanded sidebar. The
+  // single-slot lookup pinned on the ORIG_ATTR original and the fresh blossom
+  // showed the site logo forever.
+  const doc = parse(chatgptFixture);
+  applyLogo(doc, CHATGPT_HOST, 'kimi');
+
+  const oldOrig = doc.querySelector('use[href="#blossom"]').closest('svg');
+  assert.equal(oldOrig.style.display, 'none', 'precondition: old blossom hidden');
+  // React re-creates the collapsed rail with a fresh, visible blossom.
+  const fresh = oldOrig.cloneNode(true);
+  fresh.removeAttribute('data-ai-copy-orig');
+  fresh.removeAttribute('style');
+  const rail = doc.createElement('nav');
+  rail.id = 'stage-sidebar-tiny-bar';
+  rail.appendChild(fresh);
+  doc.body.appendChild(rail);
+
+  applyLogo(doc, CHATGPT_HOST, 'kimi');
+
+  assert.equal(fresh.style.display, 'none', 'fresh blossom must be hidden');
+  assert.equal(fresh.getAttribute('data-ai-copy-orig'), '1');
+  assert.equal(fresh.nextElementSibling.getAttribute('data-ai-copy-logo'), 'kimi',
+    'brand clone sits beside the fresh blossom');
+  assert.equal(doc.querySelectorAll('svg[data-ai-copy-logo]').length, 2,
+    'each blossom instance carries its own clone');
+});
+
+test('ChatGPT: every blossom instance in the document is swapped', () => {
+  // The collapsed rail, the expanded sidebar, and the mobile slideover header
+  // can each carry their own blossom — all must get the treatment.
+  const doc = parse(chatgptFixture);
+  const blossomSvg = doc.querySelector('use[href="#blossom"]').closest('svg');
+  blossomSvg.parentElement.appendChild(blossomSvg.cloneNode(true));
+
+  applyLogo(doc, CHATGPT_HOST, 'kimi');
+
+  const svgs = [...doc.querySelectorAll('use[href="#blossom"]')].map((u) => u.closest('svg'));
+  assert.equal(svgs.length, 2);
+  for (const svg of svgs) {
+    assert.equal(svg.style.display, 'none', 'instance hidden');
+    assert.equal(svg.nextElementSibling.getAttribute('data-ai-copy-logo'), 'kimi',
+      'clone beside each instance');
+  }
+  assert.equal(doc.querySelectorAll('svg[data-ai-copy-logo]').length, 2);
+});
+
+test('ChatGPT: orphaned brand clones (original removed by React) are cleaned up', () => {
+  const doc = parse(chatgptFixture);
+  applyLogo(doc, CHATGPT_HOST, 'kimi');
+  // React removes the hidden original but leaves our clone behind.
+  doc.querySelector('use[href="#blossom"]').closest('svg').remove();
+  applyLogo(doc, CHATGPT_HOST, 'kimi');
+  assert.equal(doc.querySelectorAll('svg[data-ai-copy-logo]').length, 0,
+    'clone without its original is dropped');
+});
+
+test('ChatGPT: fallback finds the logo via the open-sidebar button if the symbol is renamed', () => {
+  const doc = parse(chatgptFixture);
+  // Simulate a future ChatGPT build renaming the mark: no #blossom refs left.
+  for (const use of doc.querySelectorAll('use[href="#blossom"]')) use.setAttribute('href', '#openai-mark');
+  for (const sym of doc.querySelectorAll('symbol#blossom')) sym.id = 'openai-mark';
+  const btn = doc.querySelector('button[aria-label="打开侧边栏"]');
+  btn.setAttribute('aria-controls', 'stage-slideover-sidebar');
+
+  applyLogo(doc, CHATGPT_HOST, 'kimi');
+
+  const svg = btn.querySelector('svg');
+  assert.equal(svg.style.display, 'none', 'fallback hid the button\'s primary icon');
+  assert.equal(svg.getAttribute('data-ai-copy-orig'), '1');
+  assert.equal(svg.nextElementSibling.getAttribute('data-ai-copy-logo'), 'kimi');
+});
+
 test('ChatGPT: switching brand re-swaps the clones in place', () => {
   const doc = parse(chatgptFixture);
   applyLogo(doc, CHATGPT_HOST, 'kimi');

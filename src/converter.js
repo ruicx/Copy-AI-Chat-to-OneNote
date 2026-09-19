@@ -212,6 +212,18 @@ function stripTrailingNL(s) {
   return s.replace(/\s+$/, '');
 }
 
+/** Block-level emissions guarantee a fresh line: prepend a paragraph break so
+ *  a block that follows inline-flattened content (a badge div, a popover
+ *  chip, a caption span — AI component libraries render these as plain
+ *  divs/spans) never fuses onto the preceding line, e.g. the ChatGPT 2026
+ *  rich-card regression "重点推荐 · 机器人方向## 2. Stanford CS234…".
+ *  Doubling at true block boundaries (previous block already ended with
+ *  "\n\n") is collapsed by htmlToMd's final \n{3,} pass, so well-formed
+ *  input converts byte-identically. */
+function withFreshLine(md) {
+  return md ? '\n\n' + md : md;
+}
+
 // --- ChatGPT code-block widget ---------------------------------------------
 // ChatGPT's 2026 UI renders every code block (assistant AND user messages)
 // as a component div marked data-client-defined-widget="code_block"
@@ -262,7 +274,7 @@ function codeBlockWidgetToMd(node) {
     // anything else degrades to a bare fence instead of poisoning it.
     if (/^[\w+#.-]{1,24}$/.test(label)) lang = label;
   }
-  return '```' + lang + '\n' + raw + '\n```\n\n';
+  return withFreshLine('```' + lang + '\n' + raw + '\n```\n\n');
 }
 
 // --- core recursive converter ---------------------------------------------
@@ -300,7 +312,7 @@ function nodeToMd(node, ctx) {
     // isn't actually a Gemini math element, though mathDataAttribute already
     // guarantees it is).
     return mathElementKind(node) === 'block'
-      ? `\n\n$$${mathTex}$$\n\n`
+      ? withFreshLine(`$$${mathTex}$$\n\n`)
       : `$${mathTex}$`;
   }
 
@@ -322,19 +334,19 @@ function nodeToMd(node, ctx) {
     case 'h4': case 'h5': case 'h6': {
       const level = Number(tag[1]);
       const inner = childrenToMd(node, ctx).trim();
-      return `${'#'.repeat(level)} ${inner}\n\n`;
+      return withFreshLine(`${'#'.repeat(level)} ${inner}\n\n`);
     }
 
     case 'p': {
       const inner = childrenToMd(node, ctx).trim();
-      return inner ? `${inner}\n\n` : '';
+      return inner ? withFreshLine(`${inner}\n\n`) : '';
     }
 
     case 'br':
       return '  \n';
 
     case 'hr':
-      return '---\n\n';
+      return withFreshLine('---\n\n');
 
     case 'a': {
       const href = node.getAttribute('href') || '';
@@ -368,8 +380,9 @@ function nodeToMd(node, ctx) {
         ? t('imageTag', { n: ctx.imgSeq, alt: shortAlt })
         : t('imageTagNoAlt', { n: ctx.imgSeq });
       // Block-level: trailing blank line so the placeholder sits on its own
-      // line in the rendered output (otherwise it runs into the next paragraph).
-      return `🖼️ [${label}]\n\n`;
+      // line in the rendered output (otherwise it runs into the next
+      // paragraph); leading break so it doesn't fuse onto the previous one.
+      return withFreshLine(`🖼️ [${label}]\n\n`);
     }
 
     case 'blockquote': {
@@ -385,16 +398,16 @@ function nodeToMd(node, ctx) {
       const inner = childrenToMd(node, ctx).trim();
       if (!inner) return '';
       if (isImageCaptionBlock(node)) {
-        return `${inner}\n\n`;
+        return withFreshLine(`${inner}\n\n`);
       }
       const quoted = inner.split('\n').map(l => l ? `> ${l}` : '>').join('\n');
-      return `${quoted}\n\n`;
+      return withFreshLine(`${quoted}\n\n`);
     }
 
     case 'ul':
-      return listToMd(node, ctx, false);
+      return withFreshLine(listToMd(node, ctx, false));
     case 'ol':
-      return listToMd(node, ctx, true);
+      return withFreshLine(listToMd(node, ctx, true));
 
     case 'sequence': {
       // Gemini renders a numbered "step list" (步骤列表) as an Angular custom
@@ -411,7 +424,7 @@ function nodeToMd(node, ctx) {
       // childrenToMd flattening: the marker digit, title, subtitle, and prose
       // of EVERY step get mashed onto a single line → line breaks lost (the
       // bug this fixes). We rebuild a real ordered list, one step per line.
-      return sequenceToMd(node, ctx);
+      return withFreshLine(sequenceToMd(node, ctx));
     }
 
     case 'pre': {
@@ -424,7 +437,7 @@ function nodeToMd(node, ctx) {
         const m = cls.match(/language-([\w-]+)/);
         if (m) lang = m[1];
       }
-      return '```' + lang + '\n' + raw + '\n```\n\n';
+      return withFreshLine('```' + lang + '\n' + raw + '\n```\n\n');
     }
 
     case 'code-block': {
@@ -464,7 +477,7 @@ function nodeToMd(node, ctx) {
           if (label && !/[\s<>]/.test(label)) lang = label;
         }
       }
-      return '```' + lang + '\n' + raw + '\n```\n\n';
+      return withFreshLine('```' + lang + '\n' + raw + '\n```\n\n');
     }
 
     // NOTE: Gemini math (math-inline / math-block) is handled UPSTREAM by the
@@ -475,7 +488,7 @@ function nodeToMd(node, ctx) {
     // intercept is what reads `data-math` and emits `$...$` / `$$...$$`.
 
     case 'table':
-      return tableToMd(node, ctx);
+      return withFreshLine(tableToMd(node, ctx));
 
     case 'div': case 'section': case 'article': case 'main':
     case 'header': case 'footer': case 'aside': case 'figure':
@@ -484,12 +497,17 @@ function nodeToMd(node, ctx) {
     case 'button': {
       // Gemini wraps AI-generated content images in <button class="image-button">
       // (so clicking opens the lightbox). We must keep the image inside. But
-      // action toolbars also use <button> for Copy/Edit/Download, whose text
-      // is pure UI noise. Rule: if the button holds any <img> or block-level
-      // content element, flatten it (keep children); otherwise drop it.
+      // action toolbars also use <button> for Copy/Edit/Download — icon-only,
+      // so once the svg is dropped nothing remains and they vanish. A button
+      // with real TEXT inside message content is content itself (ChatGPT 2026
+      // rich cards render their 课程官网 / 公开视频 link pills as <button>s),
+      // so keep its label — as its own block, since buttons are discrete
+      // objects that must not fuse with surrounding inline text.
       const hasContent =
         node.querySelector('img, p, div, pre, code-block, table, ul, ol, blockquote, figure');
-      return hasContent ? childrenToMd(node, ctx) : '';
+      if (hasContent) return childrenToMd(node, ctx);
+      const inner = childrenToMd(node, ctx).trim();
+      return inner ? withFreshLine(`${inner}\n\n`) : '';
     }
 
     case 'span': case 'u': case 'sup': case 'sub': case 'mark': case 'small':
@@ -513,7 +531,14 @@ function childrenToMd(node, ctx) {
 
 function listToMd(node, ctx, ordered) {
   const lines = [];
+  // Honor <ol start="N"> — ChatGPT's 2026 rich cards render their course
+  // numbering as separate one-item lists carrying start="2", start="3", …;
+  // ignoring it renumbered every card to "1.".
   let i = 1;
+  if (ordered) {
+    const start = parseInt(node.getAttribute('start') || '', 10);
+    if (Number.isInteger(start) && start > 0) i = start;
+  }
   for (const li of node.children) {
     if (li.tagName.toLowerCase() !== 'li') continue;
     const marker = ordered ? `${i}. ` : '- ';

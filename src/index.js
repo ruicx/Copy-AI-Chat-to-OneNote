@@ -36,7 +36,11 @@ function boot() {
   const adapter = pickAdapter();
   if (!adapter) return; // unsupported site: do nothing
   booted = true;
-  console.log(`[ai-copy] active on ${adapter.name}`);
+  // The version in the log lets the user verify the installed build is the
+  // one they think it is (Tampermonkey keeps stale installs silently).
+  // __AI_COPY_VERSION__ is a build.mjs esbuild define; "dev" when unbundled.
+  const version = typeof __AI_COPY_VERSION__ === 'string' ? __AI_COPY_VERSION__ : 'dev';
+  console.log(`[ai-copy] active on ${adapter.name} v${version}`);
   mountFloatingButton(adapter);
   mountPerMessageButtons(adapter);
   applyLogoSwap(); // no-op unless the logo setting is non-empty

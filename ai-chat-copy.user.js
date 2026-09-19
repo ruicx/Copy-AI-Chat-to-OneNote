@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI 对话一键复制到 OneNote
 // @namespace    https://github.com/ruicx/Copy-AI-Chat-to-OneNote
-// @version      0.4.1
+// @version      0.4.3
 // @description  Copy AI Chat (ChatGPT/Gemini/Claude/DeepSeek/Kimi/Doubao) content to OneNote with a single click. Support Markdown, code blocks, and images. Copy the entire conversation or just the latest message. Compatible with Tampermonkey and Violentmonkey.
 // @author       ruicx
 // @match        https://gemini.google.com/*
@@ -2194,6 +2194,9 @@
   function escapeTableCell(text2) {
     return String(text2).replace(/\r\n/g, "\n").replace(/\n/g, " ").replace(/\|/g, "\\|").trim();
   }
+  function withFreshLine(md) {
+    return md ? "\n\n" + md : md;
+  }
   var CODE_BLOCK_WIDGET_ATTRS = ["data-client-defined-widget", "data-d-component"];
   function isCodeBlockWidget(node) {
     if (!node.getAttribute) return false;
@@ -2218,7 +2221,7 @@
       const label = (clone.textContent || "").replace(/\s+/g, " ").trim();
       if (/^[\w+#.-]{1,24}$/.test(label)) lang = label;
     }
-    return "```" + lang + "\n" + raw + "\n```\n\n";
+    return withFreshLine("```" + lang + "\n" + raw + "\n```\n\n");
   }
   function nodeToMd(node, ctx) {
     if (!node) return "";
@@ -2232,11 +2235,9 @@
     if (isVisuallyHidden(node)) return "";
     const mathTex = mathDataAttribute(node);
     if (mathTex) {
-      return mathElementKind(node) === "block" ? `
+      return mathElementKind(node) === "block" ? withFreshLine(`$$${mathTex}$$
 
-$$${mathTex}$$
-
-` : `$${mathTex}$`;
+`) : `$${mathTex}$`;
     }
     if (isCodeBlockWidget(node)) return codeBlockWidgetToMd(node);
     if (tag2 in INLINE) {
@@ -2254,20 +2255,20 @@ $$${mathTex}$$
       case "h6": {
         const level = Number(tag2[1]);
         const inner2 = childrenToMd(node, ctx).trim();
-        return `${"#".repeat(level)} ${inner2}
+        return withFreshLine(`${"#".repeat(level)} ${inner2}
 
-`;
+`);
       }
       case "p": {
         const inner2 = childrenToMd(node, ctx).trim();
-        return inner2 ? `${inner2}
+        return inner2 ? withFreshLine(`${inner2}
 
-` : "";
+`) : "";
       }
       case "br":
         return "  \n";
       case "hr":
-        return "---\n\n";
+        return withFreshLine("---\n\n");
       case "a": {
         const href = node.getAttribute("href") || "";
         const text2 = childrenToMd(node, ctx).trim() || href;
@@ -2283,29 +2284,29 @@ $$${mathTex}$$
         ctx.imgSeq += 1;
         const shortAlt = cleanImageAlt(alt);
         const label = shortAlt ? t("imageTag", { n: ctx.imgSeq, alt: shortAlt }) : t("imageTagNoAlt", { n: ctx.imgSeq });
-        return `\u{1F5BC}\uFE0F [${label}]
+        return withFreshLine(`\u{1F5BC}\uFE0F [${label}]
 
-`;
+`);
       }
       case "blockquote": {
         const inner2 = childrenToMd(node, ctx).trim();
         if (!inner2) return "";
         if (isImageCaptionBlock(node)) {
-          return `${inner2}
+          return withFreshLine(`${inner2}
 
-`;
+`);
         }
         const quoted = inner2.split("\n").map((l) => l ? `> ${l}` : ">").join("\n");
-        return `${quoted}
+        return withFreshLine(`${quoted}
 
-`;
+`);
       }
       case "ul":
-        return listToMd(node, ctx, false);
+        return withFreshLine(listToMd(node, ctx, false));
       case "ol":
-        return listToMd(node, ctx, true);
+        return withFreshLine(listToMd(node, ctx, true));
       case "sequence": {
-        return sequenceToMd(node, ctx);
+        return withFreshLine(sequenceToMd(node, ctx));
       }
       case "pre": {
         const codeEl = node.querySelector("code");
@@ -2316,7 +2317,7 @@ $$${mathTex}$$
           const m = cls.match(/language-([\w-]+)/);
           if (m) lang = m[1];
         }
-        return "```" + lang + "\n" + raw + "\n```\n\n";
+        return withFreshLine("```" + lang + "\n" + raw + "\n```\n\n");
       }
       case "code-block": {
         const pre = node.querySelector("pre");
@@ -2335,7 +2336,7 @@ $$${mathTex}$$
             if (label && !/[\s<>]/.test(label)) lang = label;
           }
         }
-        return "```" + lang + "\n" + raw + "\n```\n\n";
+        return withFreshLine("```" + lang + "\n" + raw + "\n```\n\n");
       }
       // NOTE: Gemini math (math-inline / math-block) is handled UPSTREAM by the
       // mathDataAttribute() check before the INLINE table / this switch. Gemini
@@ -2344,7 +2345,7 @@ $$${mathTex}$$
       // fall into `case 'span'` / `case 'div'` and get flattened. The upstream
       // intercept is what reads `data-math` and emits `$...$` / `$$...$$`.
       case "table":
-        return tableToMd(node, ctx);
+        return withFreshLine(tableToMd(node, ctx));
       case "div":
       case "section":
       case "article":
@@ -2356,7 +2357,11 @@ $$${mathTex}$$
         return childrenToMd(node, ctx);
       case "button": {
         const hasContent = node.querySelector("img, p, div, pre, code-block, table, ul, ol, blockquote, figure");
-        return hasContent ? childrenToMd(node, ctx) : "";
+        if (hasContent) return childrenToMd(node, ctx);
+        const inner2 = childrenToMd(node, ctx).trim();
+        return inner2 ? withFreshLine(`${inner2}
+
+`) : "";
       }
       case "span":
       case "u":
@@ -2381,6 +2386,10 @@ $$${mathTex}$$
   function listToMd(node, ctx, ordered) {
     const lines = [];
     let i = 1;
+    if (ordered) {
+      const start = parseInt(node.getAttribute("start") || "", 10);
+      if (Number.isInteger(start) && start > 0) i = start;
+    }
     for (const li of node.children) {
       if (li.tagName.toLowerCase() !== "li") continue;
       const marker = ordered ? `${i}. ` : "- ";
@@ -24459,15 +24468,45 @@ ${DIVIDER}
     if (existingClone) existingClone.remove();
     orig.insertAdjacentElement("afterend", brandClone(orig, choice, brand));
   }
+  function blossomSvgs(doc) {
+    const found = /* @__PURE__ */ new Set();
+    for (const use2 of doc.querySelectorAll('use[href*="#blossom"]')) {
+      const svg = use2.closest("svg");
+      if (svg) found.add(svg);
+    }
+    for (const sym of doc.querySelectorAll("symbol#blossom")) {
+      const svg = sym.closest("svg");
+      if (svg) found.add(svg);
+    }
+    if (!found.size) {
+      for (const btn of doc.querySelectorAll('button[aria-controls="stage-slideover-sidebar"]')) {
+        const svg = btn.querySelector("svg");
+        if (svg) found.add(svg);
+      }
+    }
+    return [...found];
+  }
   function swapChatGPT(doc, choice, brand) {
-    const svgClone = doc.querySelector(`svg[${SWAP_ATTR}]`);
-    const blossom = findOriginal(doc, 'use[href="#blossom"]', (use2) => use2.closest("svg"));
-    if (blossom) ensureClone(doc, blossom, svgClone, choice, brand);
-    else if (svgClone) svgClone.remove();
-    const wmClone = doc.querySelector(`.header-wordmark[${SWAP_ATTR}]`);
-    const wordmark = findOriginal(doc, ".header-wordmark", (el) => el);
-    if (wordmark) ensureClone(doc, wordmark, wmClone, choice, brand);
-    else if (wmClone) wmClone.remove();
+    for (const svg of blossomSvgs(doc)) {
+      if (svg.hasAttribute(SWAP_ATTR)) continue;
+      ensureClone(doc, svg, adjacentClone(svg), choice, brand);
+    }
+    removeOrphanClones(doc, `svg[${SWAP_ATTR}]`);
+    for (const wm of [...doc.querySelectorAll(".header-wordmark")]) {
+      if (wm.hasAttribute(SWAP_ATTR)) continue;
+      ensureClone(doc, wm, adjacentClone(wm), choice, brand);
+    }
+    removeOrphanClones(doc, `.header-wordmark[${SWAP_ATTR}]`);
+  }
+  function adjacentClone(orig) {
+    const sib = orig.nextElementSibling;
+    return sib && sib.hasAttribute(SWAP_ATTR) ? sib : null;
+  }
+  function removeOrphanClones(doc, cloneSelector) {
+    for (const clone of [...doc.querySelectorAll(cloneSelector)]) {
+      const prev = clone.previousElementSibling;
+      if (!prev || !prev.hasAttribute(ORIG_ATTR)) clone.remove();
+    }
   }
   function applyLogo(doc, hostname, choice) {
     const brand = BRANDS[choice];
@@ -24487,6 +24526,8 @@ ${DIVIDER}
   }
   var observer = null;
   var debounceTimer = 0;
+  var resyncTimer = 0;
+  var RESYNC_MS = 1500;
   function ensureObserver() {
     if (observer || typeof MutationObserver === "undefined" || !document.body) return;
     observer = new MutationObserver(() => {
@@ -24499,11 +24540,18 @@ ${DIVIDER}
       attributes: true,
       attributeFilter: ["class", "style"]
     });
+    if (typeof setInterval === "function" && !resyncTimer) {
+      resyncTimer = setInterval(applyLogoSwap, RESYNC_MS);
+    }
   }
   function stopObserver() {
     if (observer) {
       observer.disconnect();
       observer = null;
+    }
+    if (resyncTimer) {
+      clearInterval(resyncTimer);
+      resyncTimer = 0;
     }
     clearTimeout(debounceTimer);
   }
@@ -25064,7 +25112,8 @@ ${DIVIDER}
     const adapter = pickAdapter();
     if (!adapter) return;
     booted = true;
-    console.log(`[ai-copy] active on ${adapter.name}`);
+    const version2 = true ? "0.4.3" : "dev";
+    console.log(`[ai-copy] active on ${adapter.name} v${version2}`);
     mountFloatingButton(adapter);
     mountPerMessageButtons(adapter);
     applyLogoSwap();

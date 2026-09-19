@@ -19,7 +19,10 @@ setNodeDomParser((html) => {
 });
 
 test('ChatGPT saved-page math uses raw source and preserves display mode', () => {
-  const html = readFileSync(new URL('./fixtures/chatgpt-math.html', import.meta.url), 'utf8');
+  // Normalize CRLF: git autocrlf may check the fixture out with Windows line
+  // endings, which would otherwise leak into data-math-source and the assert.
+  const html = readFileSync(new URL('./fixtures/chatgpt-math.html', import.meta.url), 'utf8')
+    .replace(/\r\n/g, '\n');
   const root = parseHTML(`<body>${html}</body>`).document.querySelector('body');
   const sources = [...root.querySelectorAll('[data-math-source]')];
   assert.equal(sources.length, 2);
@@ -738,13 +741,62 @@ test('nested divs flatten to paragraphs', () => {
   );
 });
 
-test('strips script/style/button noise', () => {
+test('strips script/style and icon-only button noise', () => {
+  // Action-toolbar buttons are icon-only (svg is dropped, nothing left), so
+  // they vanish. A button with real text inside message content is content
+  // itself (ChatGPT 2026 rich-card pill buttons) and is kept — see the
+  // dedicated button test below.
   const html = '<style>.x{}</style><script>alert(1)</script>' +
-               '<p>keep</p><button>Copy</button>';
+               '<p>keep</p><button aria-label="复制"><svg><path/></svg></button>';
   const md = htmlToMd(html);
   assert.ok(!md.includes('alert'), 'no script: ' + md);
-  assert.ok(!md.includes('Copy'), 'no button: ' + md);
+  assert.ok(!md.includes('复制'), 'no icon-only button: ' + md);
   assert.ok(md.includes('keep'), 'keeps text: ' + md);
+});
+
+test('ChatGPT rich card: blocks that follow inline-flattened divs start on a fresh line', () => {
+  // Regression from a saved chatgpt.com page: the 2026 UI renders
+  // recommendation cards as data-d-component divs (badge / popover chip /
+  // caption are all inline-flattened), and every block after them fused onto
+  // the same line: "重点推荐 · 机器人方向## 2. Stanford CS234…" and
+  // "CS 224R+1学习资源". Block-level emissions must guarantee a fresh line.
+  const md = htmlToMd(
+    '<div data-d-component="box">' +
+      '<div data-d-component="badge">重点推荐 · 机器人方向</div>' +
+      '<h2><ol start="2" data-d-marker="number"><li><p>Stanford CS234 — Reinforcement Learning</p></li></ol></h2>' +
+      '<p>Chelsea Finn · 2026 Winter</p>' +
+      '<div data-d-component="popover-trigger"><span>CS 224R</span><span>+1</span></div>' +
+      '<p>学习资源</p>' +
+    '</div>');
+  eq(md, [
+    '重点推荐 · 机器人方向',
+    '',
+    '## 2. Stanford CS234 — Reinforcement Learning',
+    '',
+    'Chelsea Finn · 2026 Winter',
+    '',
+    'CS 224R+1', // the two chip spans fuse inline — tolerated (cosmetic only)
+    '',
+    '学习资源',
+  ].join('\n'));
+});
+
+test('ordered lists honor the start attribute', () => {
+  eq(htmlToMd('<ol start="3"><li>三</li><li>四</li></ol>'), '3. 三\n4. 四');
+  eq(htmlToMd('<ol><li>一</li></ol>'), '1. 一');
+});
+
+test('text-bearing buttons keep their label as a block; icon-only buttons stay dropped', () => {
+  eq(
+    htmlToMd('<p>学习资源</p><div>' +
+      '<button><span>课程官网 </span><svg><path/></svg></button>' +
+      '<button><span>公开视频</span><svg><path/></svg></button>' +
+    '</div>'),
+    '学习资源\n\n课程官网\n\n公开视频',
+  );
+  eq(htmlToMd('<div><button aria-label="复制"><svg><path/></svg></button></div>'), '');
+  // Screen-reader-only labels don't make an icon-only button text-bearing.
+  eq(htmlToMd('<div><button><span class="sr-only">复制</span><svg><path/></svg></button></div>'), '');
 });
 
 test('empty input', () => {

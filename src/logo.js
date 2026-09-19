@@ -25,15 +25,20 @@
  *   style.display and our own clone (same classes, brand content) is
  *   inserted beside it — the same append-into-the-page pattern the copy
  *   buttons already use. Kimi uses fill="currentColor" so it recolors
- *   exactly like the blossom did.
+ *   exactly like the blossom did. BOTH kinds of slot are swapped for EVERY
+ *   instance in the document: ChatGPT keeps its expanded sidebar, its
+ *   collapsed rail, and mobile variants mounted side by side, and React
+ *   re-creates whichever subtree on expand/collapse.
  *
  * SPA re-renders: Gemini/ChatGPT rebuild or re-class their DOM while
  * navigating (React even deletes our inserted clones on re-render), so a
  * debounced MutationObserver (childList + class/style attributes) re-syncs
- * the swap — including re-inserting clones the site wiped. Applying is
- * settle-based (zero DOM writes once the swap is in place) so the observer
- * never loops on its own changes, and originals are remembered so clearing
- * the setting restores the page without a reload.
+ * the swap — including re-inserting clones the site wiped. Because a
+ * debounced observer can react late (or never, under constant page churn),
+ * a settle-based setInterval re-apply acts as a safety net: it writes
+ * NOTHING once the swap is in place, so it is free and cannot loop.
+ * Originals are remembered so clearing the setting restores the page
+ * without a reload.
  */
 import { t } from './i18n.js';
 
@@ -172,19 +177,68 @@ function ensureClone(doc, orig, existingClone, choice, brand) {
   orig.insertAdjacentElement('afterend', brandClone(orig, choice, brand));
 }
 
-function swapChatGPT(doc, choice, brand) {
-  // Blossom mark: our clone is the only svg carrying SWAP_ATTR.
-  const svgClone = doc.querySelector(`svg[${SWAP_ATTR}]`);
-  const blossom = findOriginal(doc, 'use[href="#blossom"]', (use) => use.closest('svg'));
-  if (blossom) ensureClone(doc, blossom, svgClone, choice, brand);
-  else if (svgClone) svgClone.remove(); // the site removed its mark entirely
+/** Every SVG that renders ChatGPT's blossom mark. Two lookups (the <use> ref
+ *  and the <symbol> definition) deduped into one set; if BOTH miss — e.g.
+ *  ChatGPT renames the symbol in a future build — fall back to the first svg
+ *  inside the open-sidebar button (`aria-controls` points at the sidebar
+ *  container id, which is not localized): that button's primary icon IS the
+ *  site logo. */
+function blossomSvgs(doc) {
+  const found = new Set();
+  for (const use of doc.querySelectorAll('use[href*="#blossom"]')) {
+    const svg = use.closest('svg');
+    if (svg) found.add(svg);
+  }
+  for (const sym of doc.querySelectorAll('symbol#blossom')) {
+    const svg = sym.closest('svg');
+    if (svg) found.add(svg);
+  }
+  if (!found.size) {
+    for (const btn of doc.querySelectorAll('button[aria-controls="stage-slideover-sidebar"]')) {
+      const svg = btn.querySelector('svg');
+      if (svg) found.add(svg);
+    }
+  }
+  return [...found];
+}
 
-  // Wordmark ("ChatGPT"): same dance; clones share the class, so the
-  // original is picked by absence of SWAP_ATTR.
-  const wmClone = doc.querySelector(`.header-wordmark[${SWAP_ATTR}]`);
-  const wordmark = findOriginal(doc, '.header-wordmark', (el) => el);
-  if (wordmark) ensureClone(doc, wordmark, wmClone, choice, brand);
-  else if (wmClone) wmClone.remove();
+function swapChatGPT(doc, choice, brand) {
+  // Blossom mark: swap EVERY instance currently in the document — the
+  // collapsed rail's "打开侧边栏" button, the expanded sidebar's copy, the
+  // mobile slideover header, however many exist right now. React re-creates
+  // these subtrees on sidebar expand/collapse while the old hidden original
+  // can survive inside the other (still-mounted) sidebar variant; a
+  // single-slot lookup pinned to the first hidden original left a freshly
+  // mounted blossom showing the site logo forever (saved-page regression
+  // 38bd709d: collapsed rail showed the OpenAI mark after the swap).
+  for (const svg of blossomSvgs(doc)) {
+    if (svg.hasAttribute(SWAP_ATTR)) continue;
+    ensureClone(doc, svg, adjacentClone(svg), choice, brand);
+  }
+  removeOrphanClones(doc, `svg[${SWAP_ATTR}]`);
+
+  // Wordmark ("ChatGPT"): same all-instances dance; clones share the class,
+  // so originals are the ones without SWAP_ATTR.
+  for (const wm of [...doc.querySelectorAll('.header-wordmark')]) {
+    if (wm.hasAttribute(SWAP_ATTR)) continue;
+    ensureClone(doc, wm, adjacentClone(wm), choice, brand);
+  }
+  removeOrphanClones(doc, `.header-wordmark[${SWAP_ATTR}]`);
+}
+
+/** Our clone for `orig`, if it is already the element right after it. */
+function adjacentClone(orig) {
+  const sib = orig.nextElementSibling;
+  return sib && sib.hasAttribute(SWAP_ATTR) ? sib : null;
+}
+
+/** Drop clones whose hidden original is gone (React removed the subtree the
+ *  original lived in but left our clone behind, e.g. on a re-mount). */
+function removeOrphanClones(doc, cloneSelector) {
+  for (const clone of [...doc.querySelectorAll(cloneSelector)]) {
+    const prev = clone.previousElementSibling;
+    if (!prev || !prev.hasAttribute(ORIG_ATTR)) clone.remove();
+  }
 }
 
 /** Core swap for one document + hostname. Exported for tests; the live path
@@ -211,6 +265,9 @@ export function readLogoSetting() {
 
 let observer = null;
 let debounceTimer = 0;
+let resyncTimer = 0;
+// Safety-net cadence for the settle-based re-apply (see ensureObserver).
+const RESYNC_MS = 1500;
 
 function ensureObserver() {
   if (observer || typeof MutationObserver === 'undefined' || !document.body) return;
@@ -226,10 +283,20 @@ function ensureObserver() {
     childList: true, subtree: true,
     attributes: true, attributeFilter: ['class', 'style'],
   });
+  // Safety net: React can re-create a logo subtree (ChatGPT sidebar
+  // collapse/expand re-mounts the collapsed rail) at any moment, and a
+  // debounced observer can react late or never if page churn keeps
+  // postponing it. applyLogo is settle-based — it writes NOTHING once the
+  // swap is in place — so a slow periodic re-apply is free and cannot loop;
+  // it just guarantees convergence shortly after any re-render.
+  if (typeof setInterval === 'function' && !resyncTimer) {
+    resyncTimer = setInterval(applyLogoSwap, RESYNC_MS);
+  }
 }
 
 function stopObserver() {
   if (observer) { observer.disconnect(); observer = null; }
+  if (resyncTimer) { clearInterval(resyncTimer); resyncTimer = 0; }
   clearTimeout(debounceTimer);
 }
 
