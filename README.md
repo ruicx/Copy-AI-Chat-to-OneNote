@@ -126,7 +126,7 @@ is saved in `localStorage` and persists across sessions.
 | Gemini | ✅ Calibrated | `<user-query>` / `<model-response>` custom elements, `<code-block>`, image-in-`<button>`, cloned `<gem-icon-button>` toolbar buttons matching Material styling. |
 | Claude | ⚠️ Heuristic fallback | `[data-testid="user-message"]` + `[class*="prose"]`. Calibrate before relying on it. |
 | DeepSeek | ✅ Calibrated | `.ds-message` turns + `.ds-markdown` content. Native toolbar injection (cloned `ds-button` beside the site's own copy button). KaTeX-annotation math and `md-code-block` code fences handled in the converter. |
-| Kimi | ✅ Calibrated | `.segment-user` / `.segment-assistant` turns. Native toolbar injection (cloned `simple-button` / `icon-button` beside the site's copy button). `div.paragraph` / `segment-code` / `markdown-table` handled in the converter; math degrades to linearized glyphs (Kimi's KaTeX ships no LaTeX source in the DOM). |
+| Kimi | ✅ Calibrated | `.segment-user` / `.segment-assistant` turns. Native toolbar injection (cloned `simple-button` / `icon-button` beside the site's copy button). `div.paragraph` / `segment-code` / `markdown-table` handled in the converter; math is decompiled from the KaTeX render tree back to LaTeX and pasted as native OneNote equations. |
 | Doubao | ⚠️ Heuristic fallback | `[class*="message-item"]`. Calibrate before relying on it. |
 
 > Selectors on Claude / Doubao are heuristic fallbacks. The
@@ -137,7 +137,7 @@ is saved in `localStorage` and persists across sessions.
 
 ```bash
 npm install          # marked, esbuild, linkedom
-npm test             # full automated suite (189 tests)
+npm test             # full automated suite (190 tests)
 npm run build        # regenerate ai-chat-copy.user.js (LF line endings)
 ```
 

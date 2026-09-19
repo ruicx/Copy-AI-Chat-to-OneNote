@@ -425,11 +425,325 @@ function kimiMathFallback(node) {
   if (!node.getAttribute) return null;
   const cls = node.getAttribute('class') || '';
   if (!KIMI_MATH_CLASS.test(cls)) return null;
+  const display = /(^|\s)math-display(\s|$)/.test(cls);
+  // Preferred path: walk the .katex-html render tree BACK to LaTeX (it is
+  // generated deterministically from the source, see katexHtmlToTex below).
+  const root = node.querySelector('.katex-html') || node;
+  const tex = katexHtmlToTex(root).trim();
+  if (tex) {
+    return display ? withFreshLine(`$$${tex}$$\n\n`) : `$${tex}$`;
+  }
+  // Degradation: no recognizable constructs — keep the linearized glyphs as
+  // plain text (never emit them as $…$; they are not LaTeX).
   const text = (node.textContent || '').replace(/\s+/g, ' ').trim();
   if (!text) return '';
-  return /(^|\s)math-display(\s|$)/.test(cls)
-    ? withFreshLine(text + '\n\n')
-    : text;
+  return display ? withFreshLine(text + '\n\n') : text;
+}
+
+// --- KaTeX html → LaTeX decompiler ------------------------------------------
+// Kimi renders math with KaTeX output:'html' only: no MathML twin, no
+// annotation, no data-math — the raw LaTeX is NOT in the DOM. But the
+// .katex-html tree is generated deterministically FROM the LaTeX, so the
+// source is recoverable by walking it back:
+//
+//   <span class="mord|mbin|mrel|…">glyph</span>   → the glyph (mapped to a
+//                                                    macro where it matters)
+//   <span class="msupsub"><vlist>…</vlist>        → ^{…} / _{…} scripts
+//   <span class="mfrac"><vlist>…                  → \frac{num}{den}
+//   <span class="mord sqrt"><vlist>.svg-align     → \sqrt{…}
+//   <span class="mop op-limits"><vlist>…          → \sum / \lim with _{}^{}
+//   <span class="mtable"><col-align>…             → \begin{pmatrix|bmatrix|
+//                                                    cases|aligned} … \\
+//
+// The vlist positioning trick KaTeX uses is the key: every entry carries
+// style="top:-Xem" and a .pstrut sibling of height Hem; X > H means RAISED
+// (superscript / numerator / over-limit / first matrix row), X < H means
+// LOWERED (subscript / denominator / under-limit / later row). Entries that
+// are exactly neutral are the operator itself (op-limits).
+//
+// Unknown constructs flatten to their glyph text — the output degrades to the
+// linearized fallback, never to garbage. A .frac-line (the fraction bar),
+// .pstrut, .vlist-s, and svg glyphs (.hide-tail radical) contribute nothing.
+
+// KaTeX emits Unicode glyphs; map the ones whose LaTeX spelling matters for
+// round-tripping through the math renderer. Macros carry a trailing space so
+// they can never fuse with a following letter (\inftya would be a different
+// control word).
+const KATEX_GLYPH_TO_TEX = new Map(Object.entries({
+  '−': '-', '∞': '\\infty ', '∑': '\\sum ', '∏': '\\prod ', '∫': '\\int ',
+  '±': '\\pm ', '∓': '\\mp ', '×': '\\times ', '÷': '\\div ', '⋅': '\\cdot ',
+  '·': '\\cdot ', '≤': '\\le ', '≥': '\\ge ', '≈': '\\approx ',
+  '≡': '\\equiv ', '→': '\\to ', '←': '\\leftarrow ', '⇒': '\\Rightarrow ',
+  '⇌': '\\rightleftharpoons ', '∂': '\\partial ', '∇': '\\nabla ',
+  '…': '\\dots ', '⋯': '\\cdots ', '⋮': '\\vdots ', 'ℏ': '\\hbar ',
+  '∣': '\\mid ', '∥': '\\parallel ', '∈': '\\in ', '∉': '\\notin ',
+  '⊂': '\\subset ', '⊆': '\\subseteq ', '∪': '\\cup ', '∩': '\\cap ',
+  '∅': '\\emptyset ', '∀': '\\forall ', '∃': '\\exists ', '¬': '\\neg ',
+  '∧': '\\wedge ', '∨': '\\vee ', '∴': '\\therefore ', '∵': '\\because ',
+  '∝': '\\propto ', '⊥': '\\perp ', '°': '^\\circ ', '′': '\\prime ',
+  '″': '\\prime\\prime ', 'α': '\\alpha ',
+  'β': '\\beta ', 'γ': '\\gamma ', 'δ': '\\delta ', 'ε': '\\varepsilon ',
+  'ζ': '\\zeta ', 'η': '\\eta ', 'θ': '\\theta ', 'ι': '\\iota ',
+  'κ': '\\kappa ', 'λ': '\\lambda ', 'μ': '\\mu ', 'ν': '\\nu ',
+  'ξ': '\\xi ', 'π': '\\pi ', 'ρ': '\\rho ', 'σ': '\\sigma ',
+  'τ': '\\tau ', 'υ': '\\upsilon ', 'ϕ': '\\phi ', 'φ': '\\varphi ',
+  'χ': '\\chi ', 'ψ': '\\psi ', 'ω': '\\omega ', 'Γ': '\\Gamma ',
+  'Δ': '\\Delta ', 'Θ': '\\Theta ', 'Λ': '\\Lambda ', 'Ξ': '\\Xi ',
+  'Π': '\\Pi ', 'Σ': '\\Sigma ', 'Υ': '\\Upsilon ', 'Φ': '\\Phi ',
+  'Ψ': '\\Psi ', 'Ω': '\\Omega ',
+  // KaTeX encodes \neq as TWO adjacent glyphs: a private-use negation slash
+  // (U+E020) followed by a plain "=". The pair is composed at the childList
+  // level (see katexChildrenToTex); map the lone glyph to nothing.
+  '\uE020': '',
+}));
+
+// Operator names KaTeX writes as plain letter runs; the macros keep them
+// upright with operator spacing.
+const KATEX_OPERATOR_MACROS = new Map(Object.entries({
+  lim: '\\lim ', max: '\\max ', min: '\\min ', sup: '\\sup ', inf: '\\inf ',
+  log: '\\log ', ln: '\\ln ', lg: '\\lg ', sin: '\\sin ', cos: '\\cos ',
+  tan: '\\tan ', cot: '\\cot ', sec: '\\sec ', csc: '\\csc ',
+  arcsin: '\\arcsin ', arccos: '\\arccos ', arctan: '\\arctan ',
+  sinh: '\\sinh ', cosh: '\\cosh ', tanh: '\\tanh ', det: '\\det ',
+  dim: '\\dim ', exp: '\\exp ', ker: '\\ker ', deg: '\\deg ',
+  gcd: '\\gcd ', hom: '\\hom ', Pr: '\\Pr ',
+}));
+
+// Accent glyphs → macros (the glyph sits in .accent-body above the body).
+const KATEX_ACCENT_MACROS = new Map(Object.entries({
+  'ˉ': '\\bar ', '¯': '\\bar ', 'ˆ': '\\hat ', '^': '\\hat ',
+  '˙': '\\dot ', '¨': '\\ddot ', '˜': '\\tilde ', '~': '\\tilde ',
+  '⃗': '\\vec ', '˘': '\\breve ', 'ˇ': '\\check ', 'ˋ': '\\grave ',
+  '´': '\\acute ',
+}));
+
+const KATEX_NOISE_CLASS = /\b(pstrut|vlist-s|frac-line|hide-tail)\b/;
+
+function katexTextToTex(text) {
+  let out = '';
+  for (const ch of text) {
+    const mapped = KATEX_GLYPH_TO_TEX.get(ch);
+    out += mapped !== undefined ? mapped : ch;
+  }
+  return out;
+}
+
+/** The positioned entries of a KaTeX vlist, sorted highest-on-screen first,
+ *  each tagged raised / lowered / neutral relative to its pstrut. */
+function katexVlistEntries(vlist) {
+  const out = [];
+  for (const child of vlist.children) {
+    if (!child.getAttribute) continue;
+    const m = (child.getAttribute('style') || '').match(/top:(-?[\d.]+)em/);
+    if (!m) continue;
+    const top = parseFloat(m[1]);
+    const ps = child.querySelector('.pstrut');
+    const ph = ps ? (parseFloat((ps.getAttribute('style') || '').match(/height:([\d.]+)em/)?.[1]) || 0) : 0;
+    const raise = -top; // positive = how far the entry is shifted up
+    out.push({
+      el: child,
+      top: raise,
+      raised: raise > ph + 0.01,
+      lowered: raise < ph - 0.01,
+    });
+  }
+  out.sort((a, b) => b.top - a.top);
+  return out;
+}
+
+/** Bracket script content: bare for a single token, braced otherwise. */
+function katexScript(tex) {
+  if (!tex) return '';
+  if (/^[\w']$/.test(tex)) return tex;
+  return `{${tex}}`;
+}
+
+function katexToTex(node) {
+  if (!node) return '';
+  if (node.nodeType === 3) return katexTextToTex(node.textContent || '');
+  if (node.nodeType !== 1) return '';
+  const cls = node.getAttribute('class') || '';
+  if (node.tagName.toLowerCase() === 'svg') return '';
+  if (KATEX_NOISE_CLASS.test(cls)) return '';
+
+  // Fraction: raised entry = numerator, lowered = denominator; the frac-line
+  // entry contributes nothing (filtered as noise).
+  if (/\bmfrac\b/.test(cls)) {
+    const vlist = node.querySelector('.vlist');
+    const parts = vlist ? katexVlistEntries(vlist) : [];
+    const num = parts.filter(p => p.raised).map(p => katexToTex(p.el)).join('');
+    const den = parts.filter(p => p.lowered).map(p => katexToTex(p.el)).join('');
+    if (!num && !den) return '';
+    return `\\frac{${num}}{${den}}`;
+  }
+
+  // Radical: the radicand is the .svg-align entry (the .hide-tail svg is the
+  // √ glyph itself — noise).
+  if (/\bsqrt\b/.test(cls)) {
+    const align = node.querySelector('.svg-align');
+    return `\\sqrt{${align ? katexToTex(align) : ''}}`;
+  }
+
+  // Big operators with under/over limits (\sum, \prod, \lim in display):
+  // raised = over-limit, lowered = under-limit, neutral = the operator glyph.
+  if (/\bop-limits\b/.test(cls)) {
+    const vlist = node.querySelector('.vlist');
+    const parts = vlist ? katexVlistEntries(vlist) : [];
+    let op = '';
+    let over = '';
+    let under = '';
+    for (const p of parts) {
+      const tex = katexToTex(p.el);
+      if (p.raised) over += tex;
+      else if (p.lowered) under += tex;
+      else op += tex;
+    }
+    // KaTeX writes operator names as plain letters; the macros keep them
+    // upright with proper spacing.
+    op = KATEX_OPERATOR_MACROS.get(op.trim()) || op.trim() || '\\sum ';
+    return `${op}${under ? `_{${under}}` : ''}${over ? `^{${over}}` : ''}`;
+  }
+
+  // Accents (\bar{X}, \hat{x}, …): the body is the vlist's non-raised entry,
+  // the accent glyph sits in the raised .accent-body entry above it. Guard on
+  // accent-body: "accent" is a word-boundary prefix of that class too.
+  if (/\baccent\b/.test(cls) && !/\baccent-body\b/.test(cls)) {
+    const vlist = node.querySelector('.vlist');
+    const parts = vlist ? katexVlistEntries(vlist) : [];
+    let body = '';
+    let accent = '';
+    for (const p of parts) {
+      const ab = p.el.querySelector('.accent-body');
+      if (ab) accent = katexTextToTex(ab.textContent || '').trim();
+      else if (!p.raised) body = katexToTex(p.el);
+    }
+    const macro = KATEX_ACCENT_MACROS.get(accent) || '\\bar ';
+    return `${macro}{${body}}`;
+  }
+
+  // Extensible arrows with scripts (\xrightarrow{p}): the arrow glyph is an
+  // svg (.hide-tail → noise); the raised entry is the over-script. Guard on
+  // x-arrow-pad — "x-arrow" is a word-boundary prefix of that class name and
+  // the pad span wraps the over-script content.
+  if (/\bx-arrow\b/.test(cls) && !/\bx-arrow-pad\b/.test(cls)) {
+    const vlist = node.querySelector('.vlist');
+    const parts = vlist ? katexVlistEntries(vlist) : [];
+    let over = '';
+    let under = '';
+    for (const p of parts) {
+      if (p.raised) over += katexToTex(p.el);
+      else if (p.lowered) under += katexToTex(p.el);
+    }
+    return `\\xrightarrow${under ? `[${under}]` : ''}{${over}}`;
+  }
+
+  // Matrix / alignment environments: each .col-align-* span is one column
+  // holding a vlist of that column's cells; row i = the i-th raised-est entry
+  // of every column joined by &, rows joined by \\.
+  if (/\bmtable\b/.test(cls)) {
+    const cols = [...node.children].filter(
+      c => c.getAttribute && /\bcol-align\b/.test(c.getAttribute('class') || ''),
+    );
+    const rowsOf = cols.map(col => {
+      const vlist = col.querySelector('.vlist');
+      const parts = vlist ? katexVlistEntries(vlist) : [];
+      return parts.map(p => katexToTex(p.el));
+    });
+    const n = Math.max(0, ...rowsOf.map(r => r.length));
+    const rows = [];
+    for (let i = 0; i < n; i++) {
+      rows.push(rowsOf.map(r => r[i] || '').join('&'));
+    }
+    const body = rows.join('\\\\ ');
+    // Environment from the nearest surrounding delimiter: \begin{pmatrix}
+    // carries its own parens, so the delimcenter spans are skipped below.
+    const delim = findDelimChar(node);
+    let env = 'matrix';
+    if (delim === '(') env = 'pmatrix';
+    else if (delim === '[') env = 'bmatrix';
+    else if (delim === '{') env = 'cases';
+    else if (cols.some(c => /\bcol-align-r\b/.test(c.getAttribute('class') || ''))) {
+      env = 'aligned';
+    }
+    return `\\begin{${env}}${body}\\end{${env}}`;
+  }
+
+  // Scripts: the .msupsub sits INSIDE its base span as the last child.
+  if (/\bmsupsub\b/.test(cls)) return ''; // handled by the base-span branch
+  const msupsub = [...node.children].find(
+    c => c.getAttribute && /\bmsupsub\b/.test(c.getAttribute('class') || ''),
+  );
+  if (msupsub) {
+    const base = [...node.childNodes]
+      .filter(n => n !== msupsub)
+      .map(katexToTex)
+      .join('');
+    const vlist = msupsub.querySelector('.vlist');
+    const parts = vlist ? katexVlistEntries(vlist) : [];
+    let sub = '';
+    let sup = '';
+    for (const p of parts) {
+      const tex = katexToTex(p.el);
+      if (p.raised) sup += tex;
+      else if (p.lowered) sub += tex;
+    }
+    return `${base}${sub ? `_${katexScript(sub)}` : ''}${sup ? `^${katexScript(sup)}` : ''}`;
+  }
+
+  // Delimiters that sit beside an mtable are already absorbed by the
+  // environment (\begin{pmatrix} carries its own parens) — skip them. This
+  // must be a SIBLING check, not closest('.mord'): the delimiters of a
+  // pmatrix/cases live inside a .minner (not a .mord), and for the single-{
+  // cases delimiter there may be no common wrapper class at all.
+  if (/\bdelimcenter\b/.test(cls) || /\bdelimsizing\b/.test(cls)) {
+    const p = node.parentElement;
+    if (p && [...p.children].some(c => c !== node && c.querySelector && c.querySelector('.mtable'))) {
+      return '';
+    }
+  }
+
+  return katexChildrenToTex(node);
+}
+
+/** Walk child nodes with one stateful composition: KaTeX encodes \neq as two
+ *  adjacent glyph spans, a private-use negation slash (U+E020) followed by a
+ *  plain "=" — join them back into one macro. */
+function katexChildrenToTex(node) {
+  const kids = [...node.childNodes];
+  let out = '';
+  for (let i = 0; i < kids.length; i++) {
+    const k = kids[i];
+    const nx = kids[i + 1];
+    if (
+      nx &&
+      k.nodeType === 1 && nx.nodeType === 1 &&
+      (k.textContent || '') === '\uE020' && (nx.textContent || '') === '='
+    ) {
+      out += '\\neq ';
+      i++;
+      continue;
+    }
+    out += katexToTex(k);
+  }
+  return out;
+}
+
+/** Find the delimiter character nearest to an mtable: the mopen/mclose
+ *  delimcenter spans are siblings of the mtable's wrapper inside the
+ *  enclosing .minner / .mord / .base. */
+function findDelimChar(mtableNode) {
+  let scope = mtableNode.parentElement;
+  for (let i = 0; i < 3 && scope; i++) {
+    scope = scope.parentElement;
+    if (!scope) break;
+    const d = scope.querySelector('.delimsizing');
+    if (d) return (d.textContent || '').trim().charAt(0);
+  }
+  return null;
+}
+
+export function katexHtmlToTex(root) {
+  return katexToTex(root).replace(/\u200b/g, '').replace(/[ \t]+/g, ' ');
 }
 
 // --- core recursive converter ---------------------------------------------

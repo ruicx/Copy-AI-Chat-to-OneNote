@@ -69,14 +69,29 @@ test('Kimi headings, quotes, links and hr convert as usual', () => {
   assert.match(md, /\n---\n/);
 });
 
-test('Kimi math degrades to linearized glyphs (no fake LaTeX)', () => {
+test('Kimi math: katex-html decompiles back to LaTeX ($…$ / $$…$$)', () => {
   const md = md2();
-  // Inline math stays inline within the sentence.
-  assert.match(md, /质能方程 E=mc2 是行内公式的典型例子/);
-  // Display math lands on its own line.
-  assert.match(md, /^a2\+b2=c2$/m);
-  // Must NOT be wrapped in $…$ — the glyphs are not LaTeX and the math
-  // renderer would mangle them.
-  assert.doesNotMatch(md, /\$E=mc2\$/);
-  assert.doesNotMatch(md, /\$\$a2\+b2=c2\$\$/);
+  // Simple inline formulas stay inline within the sentence.
+  assert.match(md, /质能方程 \$E=mc\^2\$ 是行内公式的典型例子/);
+  assert.match(md, /再比如欧拉公式 \$e\^\{i\\pi \}\+1=0\$/);
+  // Display formulas land on their own line as $$…$$.
+  assert.match(md, /\$\$a\^2\+b\^2=c\^2\$\$/);
+  assert.match(md, /\$\$x=\\frac\{-b\\pm \\sqrt\{b\^2-4ac\}\}\{2a\}\$\$/);
+  assert.match(md, /\\zeta \(s\)=\\sum_\{n=1\}\^\{\\infty \}\\frac\{1\}\{n\^s\}/);
+  assert.match(md, /\\int _\{-\\infty \}\^\{\+\\infty \}e\^\{-x\^2\}dx=\\sqrt\{\\pi \}/);
+  // \neq composition (KaTeX's private-use slash + '='), cases, pmatrix.
+  assert.match(md, /\\neq /);
+  assert.match(md, /f\(x\)=\\begin\{cases\}x\^2&x\\ge 0\\\\ -x&x<0\\end\{cases\}/);
+  assert.match(md, /A=\\begin\{pmatrix\}a&b\\\\ c&d\\end\{pmatrix\}/);
+  // Accent + extensible arrow (law of large numbers), prime.
+  assert.match(md, /\\bar \{X\}\\xrightarrow\{p\}\\mu/);
+  assert.match(md, /f\^\{\\prime \}\(x\)/);
+});
+
+test('Kimi math: no glyph soup, no zero-width leakage', () => {
+  const md = md2();
+  assert.doesNotMatch(md, /E=mc2/);          // linearized glyphs are gone
+  assert.doesNotMatch(md, /a2\+b2=c2/);
+  assert.doesNotMatch(md, /\u200b/);          // KaTeX vlist zero-width spaces
+  assert.doesNotMatch(md, /\uE020/);          // KaTeX private-use negation glyph
 });

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI 对话一键复制到 OneNote
 // @namespace    https://github.com/ruicx/Copy-AI-Chat-to-OneNote
-// @version      0.5.6
+// @version      0.5.7
 // @description  Copy AI Chat (ChatGPT/Gemini/Claude/DeepSeek/Kimi/Doubao) content to OneNote with a single click. Support Markdown, code blocks, and images. Copy the entire conversation or just the latest message. Compatible with Tampermonkey and Violentmonkey.
 // @author       ruicx
 // @match        https://gemini.google.com/*
@@ -1950,143 +1950,6 @@
     }
   };
 
-  // src/platforms/kimi.js
-  function turns4() {
-    return [...document.querySelectorAll(".segment-user, .segment-assistant")];
-  }
-  function roleOf3(seg) {
-    return /(^|\s)segment-user(\s|$)/.test(seg.getAttribute("class") || "") ? "user" : "assistant";
-  }
-  function contentOf4(seg) {
-    if (roleOf3(seg) === "user") {
-      return seg.querySelector(".user-content__text") || seg.querySelector(".user-content") || seg;
-    }
-    const md = [...seg.querySelectorAll(".markdown")].find(
-      (m) => !m.closest(".thinking-container, .toolcall-flow")
-    );
-    return md || seg.querySelector(".markdown") || seg;
-  }
-  function nativeCopyButton(bar) {
-    const svg = bar.querySelector('svg[name="Copy"]');
-    if (!svg) return void 0;
-    return svg.closest(".simple-button, .icon-button") || svg.parentElement;
-  }
-  var kimi_default = {
-    // 2026: Kimi's web app moved to www.kimi.com; kimi.moonshot.cn kept for
-    // older installs / redirects.
-    host: ["www.kimi.com", "kimi.moonshot.cn"],
-    name: "Kimi",
-    getMessageElements() {
-      return turns4();
-    },
-    getRole(el) {
-      return roleOf3(el);
-    },
-    getMessages() {
-      return turns4().map((seg) => ({ role: roleOf3(seg), el: contentOf4(seg) }));
-    },
-    /**
-     * Kimi renders a native action bar per turn: assistant [Copy] (+ refresh/
-     * like/dislike/share behind the hover menu), user [Edit] [Copy] [Share].
-     * Our buttons go INTO the bar, right after the native Copy button (both
-     * roles), so they sit beside the site's own 复制.
-     */
-    getNativeToolbars() {
-      const out = [];
-      for (const seg of turns4()) {
-        const role = roleOf3(seg);
-        const bar = role === "user" ? seg.querySelector(".segment-user-actions") : seg.querySelector(".segment-assistant-actions-content") || seg.querySelector(".segment-assistant-actions");
-        if (!bar) continue;
-        out.push({
-          toolbar: bar,
-          content: contentOf4(seg),
-          role,
-          insertAfter: nativeCopyButton(bar)
-        });
-      }
-      return out;
-    },
-    /**
-     * Build a button that matches Kimi's native action-button markup so the
-     * injected buttons blend into the bar. Kimi has two button components —
-     * the user bar uses <div class="simple-button size-small">, the assistant
-     * bar <div class="icon-button" style="width:…">; both wrap an iconified
-     *   <svg class="iconify …" width="16" height="16" name="Icon"><path…/></svg>
-     * We clone an existing button from THIS bar (keeping the Vue data-v-…
-     * scoped-CSS ids and sizing so styling matches) and swap its iconify svg
-     * for our heroicons clipboard, preserving the svg's original classes.
-     */
-    makeNativeButton(toolbar, title, double) {
-      const template = toolbar.querySelector(".simple-button, .icon-button");
-      if (template) {
-        const clone = template.cloneNode(true);
-        clone.removeAttribute("title");
-        clone.removeAttribute("aria-label");
-        const oldSvg = clone.querySelector("svg");
-        const single = "M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184";
-        const doc = "M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5A3.375 3.375 0 0 0 6.375 7.5H5.25m11.9-3.664A2.251 2.251 0 0 0 15 2.25h-1.5a2.251 2.251 0 0 0-2.15 1.586m5.8 0c.065.21.1.433.1.664v.75h-6V4.5c0-.231.035-.454.1-.664M6.75 7.5H4.875c-.621 0-1.125.504-1.125 1.125v12c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V16.5a9 9 0 0 0-9-9Z";
-        if (oldSvg) {
-          const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-          for (const [k, v] of Object.entries({
-            class: oldSvg.getAttribute("class") || "iconify",
-            xmlns: "http://www.w3.org/2000/svg",
-            width: "16",
-            height: "16",
-            fill: "none",
-            viewBox: "0 0 24 24",
-            stroke: "currentColor",
-            "stroke-width": "1.5",
-            "stroke-linecap": "round",
-            "stroke-linejoin": "round",
-            "aria-hidden": "true"
-          })) svg.setAttribute(k, v);
-          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-          path.setAttribute("d", double ? doc : single);
-          svg.appendChild(path);
-          oldSvg.replaceWith(svg);
-        }
-        clone.setAttribute("aria-label", title);
-        return clone;
-      }
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "simple-button size-small";
-      btn.setAttribute("aria-label", title);
-      btn.textContent = title;
-      return btn;
-    }
-  };
-
-  // src/platforms/doubao.js
-  function root() {
-    return queryFirst(['[class*="chat"]', "main", "body"]);
-  }
-  function allTurns() {
-    return queryAll(
-      ['[class*="message-item"]', '[class*="bubble"]', '[class*="receive"]', '[class*="row"]'],
-      root()
-    );
-  }
-  var doubao_default = {
-    host: ["www.doubao.com", "doubao.com"],
-    name: "\u8C46\u5305",
-    getMessageElements() {
-      return allTurns();
-    },
-    getRole(el) {
-      const hint = el.className || "";
-      if (/user|self|send/i.test(hint)) return "user";
-      return "assistant";
-    },
-    getMessages() {
-      return allTurns().map((el) => {
-        const role = this.getRole(el);
-        const content = el.querySelector('[class*="markdown"]') || el.querySelector('[class*="content"]') || el;
-        return { role, el: content };
-      });
-    }
-  };
-
   // src/i18n.js
   var _locale = null;
   function getLocale() {
@@ -2142,6 +2005,15 @@
     overlayTurn: {
       zh: "\u{1F4CB} \u672C\u8F6E",
       en: "\u{1F4CB} Turn"
+    },
+    // Short pill labels for bars that render icon + text (Kimi user bar).
+    pillOne: {
+      zh: "\u590D\u5236\u672C\u6761",
+      en: "Copy msg"
+    },
+    pillTurn: {
+      zh: "\u590D\u5236\u672C\u8F6E",
+      en: "Copy turn"
     },
     // Role-badge labels prepended to each pasted message.
     badgeUser: {
@@ -2231,6 +2103,152 @@
     }
     return s;
   }
+
+  // src/platforms/kimi.js
+  function turns4() {
+    return [...document.querySelectorAll(".segment-user, .segment-assistant")];
+  }
+  function roleOf3(seg) {
+    return /(^|\s)segment-user(\s|$)/.test(seg.getAttribute("class") || "") ? "user" : "assistant";
+  }
+  function contentOf4(seg) {
+    if (roleOf3(seg) === "user") {
+      return seg.querySelector(".user-content__text") || seg.querySelector(".user-content") || seg;
+    }
+    const md = [...seg.querySelectorAll(".markdown")].find(
+      (m) => !m.closest(".thinking-container, .toolcall-flow")
+    );
+    return md || seg.querySelector(".markdown") || seg;
+  }
+  function nativeCopyButton(bar) {
+    const svg = bar.querySelector('svg[name="Copy"]');
+    if (!svg) return void 0;
+    return svg.closest(".simple-button, .icon-button") || svg.parentElement;
+  }
+  var kimi_default = {
+    // 2026: Kimi's web app moved to www.kimi.com; kimi.moonshot.cn kept for
+    // older installs / redirects.
+    host: ["www.kimi.com", "kimi.moonshot.cn"],
+    name: "Kimi",
+    getMessageElements() {
+      return turns4();
+    },
+    getRole(el) {
+      return roleOf3(el);
+    },
+    getMessages() {
+      return turns4().map((seg) => ({ role: roleOf3(seg), el: contentOf4(seg) }));
+    },
+    /**
+     * Kimi renders a native action bar per turn: assistant [Copy] (+ refresh/
+     * like/dislike/share behind the hover menu), user [Edit] [Copy] [Share].
+     * Our buttons go INTO the bar, right after the native Copy button (both
+     * roles), so they sit beside the site's own 复制.
+     */
+    getNativeToolbars() {
+      const out = [];
+      for (const seg of turns4()) {
+        const role = roleOf3(seg);
+        const bar = role === "user" ? seg.querySelector(".segment-user-actions") : seg.querySelector(".segment-assistant-actions-content") || seg.querySelector(".segment-assistant-actions");
+        if (!bar) continue;
+        out.push({
+          toolbar: bar,
+          content: contentOf4(seg),
+          role,
+          insertAfter: nativeCopyButton(bar)
+        });
+      }
+      return out;
+    },
+    /**
+     * Build a button that matches Kimi's native action-button markup so the
+     * injected buttons blend into the bar. Kimi has two button components —
+     * the user bar uses <div class="simple-button size-small">, the assistant
+     * bar <div class="icon-button" style="width:…">; both wrap an iconified
+     *   <svg class="iconify …" width="16" height="16" name="Icon"><path…/></svg>
+     * and the user-bar buttons ALSO carry a text <span> label (编辑/复制/分享).
+     *
+     * We clone the site's own COPY button from THIS bar (keeping the Vue
+     * data-v-… scoped-CSS ids and sizing so styling matches), swap its iconify
+     * svg for our heroicons clipboard, and — when the bar shows labels — set
+     * the span to our short pill text. Cloning the FIRST button instead would
+     * inherit "编辑" (the first user-bar button is Edit), which read as a
+     * second Edit control in the bar.
+     */
+    makeNativeButton(toolbar, title, double) {
+      const template = nativeCopyButton(toolbar) || toolbar.querySelector(".simple-button, .icon-button");
+      if (template) {
+        const clone = template.cloneNode(true);
+        clone.removeAttribute("title");
+        clone.removeAttribute("aria-label");
+        const oldSvg = clone.querySelector("svg");
+        const single = "M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184";
+        const doc = "M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5A3.375 3.375 0 0 0 6.375 7.5H5.25m11.9-3.664A2.251 2.251 0 0 0 15 2.25h-1.5a2.251 2.251 0 0 0-2.15 1.586m5.8 0c.065.21.1.433.1.664v.75h-6V4.5c0-.231.035-.454.1-.664M6.75 7.5H4.875c-.621 0-1.125.504-1.125 1.125v12c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V16.5a9 9 0 0 0-9-9Z";
+        if (oldSvg) {
+          const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          for (const [k, v] of Object.entries({
+            class: oldSvg.getAttribute("class") || "iconify",
+            xmlns: "http://www.w3.org/2000/svg",
+            width: "16",
+            height: "16",
+            fill: "none",
+            viewBox: "0 0 24 24",
+            stroke: "currentColor",
+            "stroke-width": "1.5",
+            "stroke-linecap": "round",
+            "stroke-linejoin": "round",
+            "aria-hidden": "true"
+          })) svg.setAttribute(k, v);
+          const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+          path.setAttribute("d", double ? doc : single);
+          svg.appendChild(path);
+          oldSvg.replaceWith(svg);
+        }
+        const label = [...clone.children].find(
+          (c2) => c2.tagName === "SPAN" && !/\biconify\b/.test(c2.getAttribute("class") || "")
+        );
+        if (label) label.textContent = t(double ? "pillTurn" : "pillOne");
+        clone.setAttribute("aria-label", title);
+        return clone;
+      }
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "simple-button size-small";
+      btn.setAttribute("aria-label", title);
+      btn.textContent = title;
+      return btn;
+    }
+  };
+
+  // src/platforms/doubao.js
+  function root() {
+    return queryFirst(['[class*="chat"]', "main", "body"]);
+  }
+  function allTurns() {
+    return queryAll(
+      ['[class*="message-item"]', '[class*="bubble"]', '[class*="receive"]', '[class*="row"]'],
+      root()
+    );
+  }
+  var doubao_default = {
+    host: ["www.doubao.com", "doubao.com"],
+    name: "\u8C46\u5305",
+    getMessageElements() {
+      return allTurns();
+    },
+    getRole(el) {
+      const hint = el.className || "";
+      if (/user|self|send/i.test(hint)) return "user";
+      return "assistant";
+    },
+    getMessages() {
+      return allTurns().map((el) => {
+        const role = this.getRole(el);
+        const content = el.querySelector('[class*="markdown"]') || el.querySelector('[class*="content"]') || el;
+        return { role, el: content };
+      });
+    }
+  };
 
   // src/converter.js
   var nodeDomParse = null;
@@ -2443,9 +2461,319 @@
     if (!node.getAttribute) return null;
     const cls = node.getAttribute("class") || "";
     if (!KIMI_MATH_CLASS.test(cls)) return null;
+    const display = /(^|\s)math-display(\s|$)/.test(cls);
+    const root2 = node.querySelector(".katex-html") || node;
+    const tex = katexHtmlToTex(root2).trim();
+    if (tex) {
+      return display ? withFreshLine(`$$${tex}$$
+
+`) : `$${tex}$`;
+    }
     const text2 = (node.textContent || "").replace(/\s+/g, " ").trim();
     if (!text2) return "";
-    return /(^|\s)math-display(\s|$)/.test(cls) ? withFreshLine(text2 + "\n\n") : text2;
+    return display ? withFreshLine(text2 + "\n\n") : text2;
+  }
+  var KATEX_GLYPH_TO_TEX = new Map(Object.entries({
+    "\u2212": "-",
+    "\u221E": "\\infty ",
+    "\u2211": "\\sum ",
+    "\u220F": "\\prod ",
+    "\u222B": "\\int ",
+    "\xB1": "\\pm ",
+    "\u2213": "\\mp ",
+    "\xD7": "\\times ",
+    "\xF7": "\\div ",
+    "\u22C5": "\\cdot ",
+    "\xB7": "\\cdot ",
+    "\u2264": "\\le ",
+    "\u2265": "\\ge ",
+    "\u2248": "\\approx ",
+    "\u2261": "\\equiv ",
+    "\u2192": "\\to ",
+    "\u2190": "\\leftarrow ",
+    "\u21D2": "\\Rightarrow ",
+    "\u21CC": "\\rightleftharpoons ",
+    "\u2202": "\\partial ",
+    "\u2207": "\\nabla ",
+    "\u2026": "\\dots ",
+    "\u22EF": "\\cdots ",
+    "\u22EE": "\\vdots ",
+    "\u210F": "\\hbar ",
+    "\u2223": "\\mid ",
+    "\u2225": "\\parallel ",
+    "\u2208": "\\in ",
+    "\u2209": "\\notin ",
+    "\u2282": "\\subset ",
+    "\u2286": "\\subseteq ",
+    "\u222A": "\\cup ",
+    "\u2229": "\\cap ",
+    "\u2205": "\\emptyset ",
+    "\u2200": "\\forall ",
+    "\u2203": "\\exists ",
+    "\xAC": "\\neg ",
+    "\u2227": "\\wedge ",
+    "\u2228": "\\vee ",
+    "\u2234": "\\therefore ",
+    "\u2235": "\\because ",
+    "\u221D": "\\propto ",
+    "\u22A5": "\\perp ",
+    "\xB0": "^\\circ ",
+    "\u2032": "\\prime ",
+    "\u2033": "\\prime\\prime ",
+    "\u03B1": "\\alpha ",
+    "\u03B2": "\\beta ",
+    "\u03B3": "\\gamma ",
+    "\u03B4": "\\delta ",
+    "\u03B5": "\\varepsilon ",
+    "\u03B6": "\\zeta ",
+    "\u03B7": "\\eta ",
+    "\u03B8": "\\theta ",
+    "\u03B9": "\\iota ",
+    "\u03BA": "\\kappa ",
+    "\u03BB": "\\lambda ",
+    "\u03BC": "\\mu ",
+    "\u03BD": "\\nu ",
+    "\u03BE": "\\xi ",
+    "\u03C0": "\\pi ",
+    "\u03C1": "\\rho ",
+    "\u03C3": "\\sigma ",
+    "\u03C4": "\\tau ",
+    "\u03C5": "\\upsilon ",
+    "\u03D5": "\\phi ",
+    "\u03C6": "\\varphi ",
+    "\u03C7": "\\chi ",
+    "\u03C8": "\\psi ",
+    "\u03C9": "\\omega ",
+    "\u0393": "\\Gamma ",
+    "\u0394": "\\Delta ",
+    "\u0398": "\\Theta ",
+    "\u039B": "\\Lambda ",
+    "\u039E": "\\Xi ",
+    "\u03A0": "\\Pi ",
+    "\u03A3": "\\Sigma ",
+    "\u03A5": "\\Upsilon ",
+    "\u03A6": "\\Phi ",
+    "\u03A8": "\\Psi ",
+    "\u03A9": "\\Omega ",
+    // KaTeX encodes \neq as TWO adjacent glyphs: a private-use negation slash
+    // (U+E020) followed by a plain "=". The pair is composed at the childList
+    // level (see katexChildrenToTex); map the lone glyph to nothing.
+    "\uE020": ""
+  }));
+  var KATEX_OPERATOR_MACROS = new Map(Object.entries({
+    lim: "\\lim ",
+    max: "\\max ",
+    min: "\\min ",
+    sup: "\\sup ",
+    inf: "\\inf ",
+    log: "\\log ",
+    ln: "\\ln ",
+    lg: "\\lg ",
+    sin: "\\sin ",
+    cos: "\\cos ",
+    tan: "\\tan ",
+    cot: "\\cot ",
+    sec: "\\sec ",
+    csc: "\\csc ",
+    arcsin: "\\arcsin ",
+    arccos: "\\arccos ",
+    arctan: "\\arctan ",
+    sinh: "\\sinh ",
+    cosh: "\\cosh ",
+    tanh: "\\tanh ",
+    det: "\\det ",
+    dim: "\\dim ",
+    exp: "\\exp ",
+    ker: "\\ker ",
+    deg: "\\deg ",
+    gcd: "\\gcd ",
+    hom: "\\hom ",
+    Pr: "\\Pr "
+  }));
+  var KATEX_ACCENT_MACROS = new Map(Object.entries({
+    "\u02C9": "\\bar ",
+    "\xAF": "\\bar ",
+    "\u02C6": "\\hat ",
+    "^": "\\hat ",
+    "\u02D9": "\\dot ",
+    "\xA8": "\\ddot ",
+    "\u02DC": "\\tilde ",
+    "~": "\\tilde ",
+    "\u20D7": "\\vec ",
+    "\u02D8": "\\breve ",
+    "\u02C7": "\\check ",
+    "\u02CB": "\\grave ",
+    "\xB4": "\\acute "
+  }));
+  var KATEX_NOISE_CLASS = /\b(pstrut|vlist-s|frac-line|hide-tail)\b/;
+  function katexTextToTex(text2) {
+    let out = "";
+    for (const ch of text2) {
+      const mapped = KATEX_GLYPH_TO_TEX.get(ch);
+      out += mapped !== void 0 ? mapped : ch;
+    }
+    return out;
+  }
+  function katexVlistEntries(vlist) {
+    const out = [];
+    for (const child of vlist.children) {
+      if (!child.getAttribute) continue;
+      const m = (child.getAttribute("style") || "").match(/top:(-?[\d.]+)em/);
+      if (!m) continue;
+      const top = parseFloat(m[1]);
+      const ps = child.querySelector(".pstrut");
+      const ph = ps ? parseFloat((ps.getAttribute("style") || "").match(/height:([\d.]+)em/)?.[1]) || 0 : 0;
+      const raise = -top;
+      out.push({
+        el: child,
+        top: raise,
+        raised: raise > ph + 0.01,
+        lowered: raise < ph - 0.01
+      });
+    }
+    out.sort((a, b) => b.top - a.top);
+    return out;
+  }
+  function katexScript(tex) {
+    if (!tex) return "";
+    if (/^[\w']$/.test(tex)) return tex;
+    return `{${tex}}`;
+  }
+  function katexToTex(node) {
+    if (!node) return "";
+    if (node.nodeType === 3) return katexTextToTex(node.textContent || "");
+    if (node.nodeType !== 1) return "";
+    const cls = node.getAttribute("class") || "";
+    if (node.tagName.toLowerCase() === "svg") return "";
+    if (KATEX_NOISE_CLASS.test(cls)) return "";
+    if (/\bmfrac\b/.test(cls)) {
+      const vlist = node.querySelector(".vlist");
+      const parts = vlist ? katexVlistEntries(vlist) : [];
+      const num = parts.filter((p) => p.raised).map((p) => katexToTex(p.el)).join("");
+      const den = parts.filter((p) => p.lowered).map((p) => katexToTex(p.el)).join("");
+      if (!num && !den) return "";
+      return `\\frac{${num}}{${den}}`;
+    }
+    if (/\bsqrt\b/.test(cls)) {
+      const align = node.querySelector(".svg-align");
+      return `\\sqrt{${align ? katexToTex(align) : ""}}`;
+    }
+    if (/\bop-limits\b/.test(cls)) {
+      const vlist = node.querySelector(".vlist");
+      const parts = vlist ? katexVlistEntries(vlist) : [];
+      let op2 = "";
+      let over = "";
+      let under = "";
+      for (const p of parts) {
+        const tex = katexToTex(p.el);
+        if (p.raised) over += tex;
+        else if (p.lowered) under += tex;
+        else op2 += tex;
+      }
+      op2 = KATEX_OPERATOR_MACROS.get(op2.trim()) || op2.trim() || "\\sum ";
+      return `${op2}${under ? `_{${under}}` : ""}${over ? `^{${over}}` : ""}`;
+    }
+    if (/\baccent\b/.test(cls) && !/\baccent-body\b/.test(cls)) {
+      const vlist = node.querySelector(".vlist");
+      const parts = vlist ? katexVlistEntries(vlist) : [];
+      let body = "";
+      let accent2 = "";
+      for (const p of parts) {
+        const ab = p.el.querySelector(".accent-body");
+        if (ab) accent2 = katexTextToTex(ab.textContent || "").trim();
+        else if (!p.raised) body = katexToTex(p.el);
+      }
+      const macro = KATEX_ACCENT_MACROS.get(accent2) || "\\bar ";
+      return `${macro}{${body}}`;
+    }
+    if (/\bx-arrow\b/.test(cls) && !/\bx-arrow-pad\b/.test(cls)) {
+      const vlist = node.querySelector(".vlist");
+      const parts = vlist ? katexVlistEntries(vlist) : [];
+      let over = "";
+      let under = "";
+      for (const p of parts) {
+        if (p.raised) over += katexToTex(p.el);
+        else if (p.lowered) under += katexToTex(p.el);
+      }
+      return `\\xrightarrow${under ? `[${under}]` : ""}{${over}}`;
+    }
+    if (/\bmtable\b/.test(cls)) {
+      const cols = [...node.children].filter(
+        (c2) => c2.getAttribute && /\bcol-align\b/.test(c2.getAttribute("class") || "")
+      );
+      const rowsOf = cols.map((col) => {
+        const vlist = col.querySelector(".vlist");
+        const parts = vlist ? katexVlistEntries(vlist) : [];
+        return parts.map((p) => katexToTex(p.el));
+      });
+      const n = Math.max(0, ...rowsOf.map((r) => r.length));
+      const rows = [];
+      for (let i = 0; i < n; i++) {
+        rows.push(rowsOf.map((r) => r[i] || "").join("&"));
+      }
+      const body = rows.join("\\\\ ");
+      const delim = findDelimChar(node);
+      let env = "matrix";
+      if (delim === "(") env = "pmatrix";
+      else if (delim === "[") env = "bmatrix";
+      else if (delim === "{") env = "cases";
+      else if (cols.some((c2) => /\bcol-align-r\b/.test(c2.getAttribute("class") || ""))) {
+        env = "aligned";
+      }
+      return `\\begin{${env}}${body}\\end{${env}}`;
+    }
+    if (/\bmsupsub\b/.test(cls)) return "";
+    const msupsub = [...node.children].find(
+      (c2) => c2.getAttribute && /\bmsupsub\b/.test(c2.getAttribute("class") || "")
+    );
+    if (msupsub) {
+      const base = [...node.childNodes].filter((n) => n !== msupsub).map(katexToTex).join("");
+      const vlist = msupsub.querySelector(".vlist");
+      const parts = vlist ? katexVlistEntries(vlist) : [];
+      let sub = "";
+      let sup = "";
+      for (const p of parts) {
+        const tex = katexToTex(p.el);
+        if (p.raised) sup += tex;
+        else if (p.lowered) sub += tex;
+      }
+      return `${base}${sub ? `_${katexScript(sub)}` : ""}${sup ? `^${katexScript(sup)}` : ""}`;
+    }
+    if (/\bdelimcenter\b/.test(cls) || /\bdelimsizing\b/.test(cls)) {
+      const p = node.parentElement;
+      if (p && [...p.children].some((c2) => c2 !== node && c2.querySelector && c2.querySelector(".mtable"))) {
+        return "";
+      }
+    }
+    return katexChildrenToTex(node);
+  }
+  function katexChildrenToTex(node) {
+    const kids = [...node.childNodes];
+    let out = "";
+    for (let i = 0; i < kids.length; i++) {
+      const k = kids[i];
+      const nx = kids[i + 1];
+      if (nx && k.nodeType === 1 && nx.nodeType === 1 && (k.textContent || "") === "\uE020" && (nx.textContent || "") === "=") {
+        out += "\\neq ";
+        i++;
+        continue;
+      }
+      out += katexToTex(k);
+    }
+    return out;
+  }
+  function findDelimChar(mtableNode) {
+    let scope = mtableNode.parentElement;
+    for (let i = 0; i < 3 && scope; i++) {
+      scope = scope.parentElement;
+      if (!scope) break;
+      const d = scope.querySelector(".delimsizing");
+      if (d) return (d.textContent || "").trim().charAt(0);
+    }
+    return null;
+  }
+  function katexHtmlToTex(root2) {
+    return katexToTex(root2).replace(/\u200b/g, "").replace(/[ \t]+/g, " ");
   }
   function nodeToMd(node, ctx) {
     if (!node) return "";

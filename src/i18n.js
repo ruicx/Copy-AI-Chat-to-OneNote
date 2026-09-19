@@ -57,6 +57,11 @@ const STRINGS = {
   // Overlay (fallback) copy-turn button label.
   overlayTurn:      { zh: '📋 本轮',
                       en: '📋 Turn' },
+  // Short pill labels for bars that render icon + text (Kimi user bar).
+  pillOne:          { zh: '复制本条',
+                      en: 'Copy msg' },
+  pillTurn:         { zh: '复制本轮',
+                      en: 'Copy turn' },
   // Role-badge labels prepended to each pasted message.
   badgeUser:        { zh: '🧑 用户',
                       en: '🧑 You' },

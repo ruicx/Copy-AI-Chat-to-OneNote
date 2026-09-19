@@ -22,6 +22,8 @@
  * span.katex-wrapper) are handled in the converter — see the Kimi section in
  * src/converter.js.
  */
+import { t } from '../i18n.js';
+
 function turns() {
   // Comma = union in DOCUMENT ORDER (user/assistant alternate as written).
   // Do NOT use base.js queryAll here — that is a fallback list (first
@@ -111,12 +113,19 @@ export default {
    * the user bar uses <div class="simple-button size-small">, the assistant
    * bar <div class="icon-button" style="width:…">; both wrap an iconified
    *   <svg class="iconify …" width="16" height="16" name="Icon"><path…/></svg>
-   * We clone an existing button from THIS bar (keeping the Vue data-v-…
-   * scoped-CSS ids and sizing so styling matches) and swap its iconify svg
-   * for our heroicons clipboard, preserving the svg's original classes.
+   * and the user-bar buttons ALSO carry a text <span> label (编辑/复制/分享).
+   *
+   * We clone the site's own COPY button from THIS bar (keeping the Vue
+   * data-v-… scoped-CSS ids and sizing so styling matches), swap its iconify
+   * svg for our heroicons clipboard, and — when the bar shows labels — set
+   * the span to our short pill text. Cloning the FIRST button instead would
+   * inherit "编辑" (the first user-bar button is Edit), which read as a
+   * second Edit control in the bar.
    */
   makeNativeButton(toolbar, title, double) {
-    const template = toolbar.querySelector('.simple-button, .icon-button');
+    const template =
+      nativeCopyButton(toolbar) ||
+      toolbar.querySelector('.simple-button, .icon-button');
     if (template) {
       const clone = template.cloneNode(true);
       // Drop copied identity so our title is authoritative.
@@ -140,6 +149,12 @@ export default {
         svg.appendChild(path);
         oldSvg.replaceWith(svg);
       }
+      // Icon+text bars: relabel the pill (the clone came from the native
+      // copy button, so the span would otherwise just say 复制 again).
+      const label = [...clone.children].find(
+        c => c.tagName === 'SPAN' && !/\biconify\b/.test(c.getAttribute('class') || ''),
+      );
+      if (label) label.textContent = t(double ? 'pillTurn' : 'pillOne');
       clone.setAttribute('aria-label', title);
       return clone;
     }

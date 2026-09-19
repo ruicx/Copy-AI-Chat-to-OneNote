@@ -13,6 +13,7 @@ const { document } = parseHTML(fixture);
 globalThis.document = document;
 
 const adapter = (await import('../src/platforms/kimi.js')).default;
+const { t } = await import('../src/i18n.js');
 
 test('adapter name and hosts (www.kimi.com + legacy moonshot)', () => {
   assert.equal(adapter.name, 'Kimi');
@@ -92,10 +93,15 @@ test('makeNativeButton clones the native button and swaps in our clipboard svg',
   assert.equal(svg.getAttribute('name'), null, 'iconify name attr is gone');
   assert.match(svg.getAttribute('class'), /iconify/);
   assert.equal(btn.getAttribute('aria-label'), '复制本条到 OneNote');
-  // The user bar clones the .simple-button flavour instead.
+  // The user bar clones the .simple-button flavour and relabels the pill
+  // span (cloning the FIRST button would inherit "编辑" — the bug this
+  // guards against).
   const userBar = bars.find(b => b.role === 'user');
   const ubtn = adapter.makeNativeButton(userBar.toolbar, 'x', true);
   assert.match(ubtn.getAttribute('class'), /simple-button/);
+  assert.equal(ubtn.querySelector('span').textContent, t('pillTurn'));
+  const ubtnSingle = adapter.makeNativeButton(userBar.toolbar, 'x', false);
+  assert.equal(ubtnSingle.querySelector('span').textContent, t('pillOne'));
   assert.ok(ubtn.querySelector('svg path').getAttribute('d').length > 100,
     'turn variant carries the clipboard-document path');
 });

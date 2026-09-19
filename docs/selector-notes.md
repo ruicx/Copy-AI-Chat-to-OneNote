@@ -114,9 +114,11 @@
 - 代码块：`div.segment-code`（header 的 `.segment-code-lang` 是语言标签，
   `pre`/`code` 都带 `language-` 类）
 - 表格：`div.markdown-table` = header + 真 `<table>`，只丢 header
-- 数学：KaTeX 只有 HTML 渲染树（无 MathML/annotation/data-math），LaTeX
-  无法从 DOM 恢复——降级为线性化文本（display 公式独占一行），不输出
-  `$…$`
+- 数学：KaTeX 只有 HTML 渲染树（无 MathML/annotation/data-math），但渲染
+  树由 LaTeX 确定性生成——`katexHtmlToTex()` 把它反编译回 LaTeX，输出
+  `$…$`/`$$…$$`，经 Temml 渲染成 OneNote 原生公式。核心是 vlist 定位
+  规律：条目 `top:-Xem` + pstrut 高度 `Hem`，X > H 即"高位"（上标/分子/
+  上限/矩阵首行）。未知结构降级为线性化文本，绝不输出伪 `$…$`
 
 ---
 

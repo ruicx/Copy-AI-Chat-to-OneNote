@@ -306,9 +306,10 @@ conversation; code bodies truncated, decorative svg paths shortened,
 Kimi's web app moved to **www.kimi.com** (the adapter keeps
 `kimi.moonshot.cn` for older installs). Calibrated against a saved live page;
 fixture `test/fixtures/kimi-sample.html` (extracted from an "OneNote测试"
-conversation; code bodies truncated, all but one inline/display math wrapper
-removed). Kimi is a Vue/Nuxt app — cloned buttons must KEEP their `data-v-…`
-scoped-CSS attributes or the styles won't apply.
+conversation; code bodies truncated — every `span.katex-wrapper` math render
+is kept intact, the decompiler is calibrated against all of them). Kimi is a
+Vue/Nuxt app — cloned buttons must KEEP their `data-v-…` scoped-CSS
+attributes or the styles won't apply.
 
 - Turns are `div.segment.segment-user` / `div.segment.segment-assistant`.
   User content is plain text (`span.user-content__text`); assistant content is
@@ -318,11 +319,14 @@ scoped-CSS attributes or the styles won't apply.
   NOTE: `turns()` must use a comma-union `querySelectorAll`, NOT base.js
   `queryAll` (a fallback list — first match wins would drop the assistant
   segments).
-- Native action bars: user [Edit][Copy][Share] as `.simple-button`s; assistant
-  [Copy] (+ more behind hover) as `.icon-button`s — two different button
-  components. Both wrap an iconified `<svg name="IconName">`; the anchor is
-  the button wrapping `svg[name="Copy"]` (both roles). `makeNativeButton`
-  clones the bar's own button and swaps the svg, preserving its class.
+- Native action bars: user [Edit][Copy][Share] as `.simple-button`s (icon +
+  text-`<span>` pills); assistant [Copy] (+ more behind hover) as
+  `.icon-button`s — two different button components. Both wrap an iconified
+  `<svg name="IconName">`; the anchor and clone template is the button
+  wrapping `svg[name="Copy"]` — NOT the first button (that's Edit, and the
+  clone would inherit its 编辑 label; regression 2026-09). When the clone
+  carries a label span it is rewritten to the short pill text
+  (`pillOne`/`pillTurn`); icon-only bars keep icon-only.
 - Converter intercepts (Kimi section in `src/converter.js`):
   - `div.paragraph` — paragraphs are DIVs, not `<p>`; left generic they fuse
     onto one line.
@@ -332,10 +336,23 @@ scoped-CSS attributes or the styles won't apply.
   - `div.markdown-table` — a header bar ("表格 复制") plus a REAL `<table>`
     inside `.table-container`; only the header must be dropped.
   - `span.katex-wrapper` math — KaTeX with output:'html' ONLY: no MathML
-    twin, no `annotation`, no `data-math` — the raw LaTeX is unrecoverable
-    from the DOM. Honest degradation: keep the linearized glyphs as text,
-    own line for display (`math-display`). Do NOT emit `$…$` (the glyphs
-    are not LaTeX; Temml would mangle them).
+    twin, no `annotation`, no `data-math`, so the LaTeX is not stored
+    anywhere in the DOM. Instead the `.katex-html` render tree is walked
+    BACK to LaTeX by `katexHtmlToTex()` and emitted as `$…$`/`$$…$$` so the
+    renderer produces native OneNote equations. The tree is deterministic;
+    the vlist trick is the key: each entry carries `top:-Xem` + a
+    `.pstrut` of height `Hem`, and X > H ⇔ RAISED (superscript, numerator,
+    over-limit, first matrix row), X < H ⇔ lowered. Handled constructs:
+    mfrac, sqrt (.svg-align entry), msupsub scripts, op-limits
+    (\sum/\lim → operator macros), mtable → pmatrix/bmatrix/cases/aligned
+    (env from the nearest `.delimsizing` char), accents (.accent +
+    .accent-body), x-arrow (\xrightarrow, guarded against the
+    `x-arrow-pad` class false-positive), and the \neq composite
+    (private-use U+E020 glyph + '=' span pair, joined at the childList
+    level). Unicode glyphs map back to macros (KATEX_GLYPH_TO_TEX);
+    anything unknown flattens to its glyph text — degradation, never
+    garbage. Do NOT emit the raw linearized glyphs as `$…$` (they are not
+    LaTeX).
 - Task lists come through as literal `[x] ` / `[ ] ` text in the li — kept
   as-is, which marked's GFM then renders as ☑/☐ (same as real task syntax).
 - Untouched/unsupported: search-result cards (`okc-cards-container`),
@@ -486,6 +503,6 @@ recalibrating a platform, save a fixture and add an adapter test.
 ## Commit / PR conventions
 
 - Build before committing if `src/` changed: `npm run build`, then commit both.
-- Run `npm test` before pushing — 189 tests should all pass.
+- Run `npm test` before pushing — 190 tests should all pass.
 - Keep the userscript header version in `build.mjs` in sync with
   `package.json` if you bump versions.
