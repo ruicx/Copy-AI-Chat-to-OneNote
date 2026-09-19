@@ -10,6 +10,7 @@
 // @match        https://claude.ai/*
 // @match        https://chat.deepseek.com/*
 // @match        https://kimi.moonshot.cn/*
+// @match        https://www.kimi.com/*
 // @match        https://www.doubao.com/chat/*
 // @grant        none
 // @run-at       document-idle
