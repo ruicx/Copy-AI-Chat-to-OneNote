@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         AI 对话一键复制到 OneNote
 // @namespace    https://github.com/ruicx/Copy-AI-Chat-to-OneNote
-// @version      0.5.4
+// @version      0.5.5
 // @description  Copy AI Chat (ChatGPT/Gemini/Claude/DeepSeek/Kimi/Doubao) content to OneNote with a single click. Support Markdown, code blocks, and images. Copy the entire conversation or just the latest message. Compatible with Tampermonkey and Violentmonkey.
 // @author       ruicx
 // @match        https://gemini.google.com/*
@@ -1582,20 +1582,20 @@
   });
 
   // src/platforms/base.js
-  function queryFirst(selectorList, root4 = document) {
+  function queryFirst(selectorList, root3 = document) {
     for (const sel of selectorList) {
       try {
-        const el = root4.querySelector(sel);
+        const el = root3.querySelector(sel);
         if (el) return el;
       } catch (_) {
       }
     }
     return null;
   }
-  function queryAll(selectorList, root4 = document) {
+  function queryAll(selectorList, root3 = document) {
     for (const sel of selectorList) {
       try {
-        const els = root4.querySelectorAll(sel);
+        const els = root3.querySelectorAll(sel);
         if (els.length) return Array.from(els);
       } catch (_) {
       }
@@ -1686,10 +1686,10 @@
   }
 
   // src/platforms/gemini.js
-  function turns(root4) {
-    const merged = [...root4.querySelectorAll("user-query, model-response")];
+  function turns(root3) {
+    const merged = [...root3.querySelectorAll("user-query, model-response")];
     if (merged.length) return merged;
-    return [...root4.querySelectorAll('[class*="conversation-turn"]')];
+    return [...root3.querySelectorAll('[class*="conversation-turn"]')];
   }
   function contentOf2(turn) {
     const tag2 = turn.tagName.toLowerCase();
@@ -1852,47 +1852,115 @@
   };
 
   // src/platforms/deepseek.js
-  function root() {
-    return queryFirst(['[class*="chat-content"]', "main", "body"]);
+  var COPY_ICON_PATH = /^M6\.14929 4\.02032/;
+  function turns3() {
+    return queryAll([".ds-message"]);
   }
-  function allTurns() {
-    return queryAll(
-      ['[class*="message"]', '[class*="bubble"]', '[class*="row"]'],
-      root()
-    );
+  function roleOf2(msg) {
+    if (msg.querySelector(".ds-assistant-message-main-content")) return "assistant";
+    if (msg.querySelector(".ds-collapsible-text")) return "user";
+    return msg.querySelector(".ds-markdown") ? "assistant" : "user";
+  }
+  function contentOf3(msg) {
+    return msg.querySelector(".ds-markdown.ds-assistant-message-main-content") || msg.querySelector(".ds-markdown") || msg.querySelector(".ds-collapsible-text") || msg;
+  }
+  function actionBarOf(msg) {
+    const wrap = msg.parentElement;
+    if (!wrap) return null;
+    const btns = [...wrap.querySelectorAll('[role="button"].ds-button, button.ds-button')].filter((b) => !msg.contains(b));
+    if (!btns.length) return null;
+    const bar = btns[0].closest(".ds-flex") || btns[0].parentElement;
+    const copyBtn = btns.find((b) => {
+      const d = b.querySelector("svg path")?.getAttribute("d") || "";
+      return COPY_ICON_PATH.test(d);
+    }) || btns[0];
+    return { bar, copyBtn };
   }
   var deepseek_default = {
     host: ["chat.deepseek.com"],
     name: "DeepSeek",
     getMessageElements() {
-      return allTurns();
+      return turns3();
     },
     getRole(el) {
-      const hint = (el.className || "") + " " + (el.getAttribute("data-role") || "");
-      if (/user|question/i.test(hint)) return "user";
-      return "assistant";
+      return roleOf2(el);
     },
     getMessages() {
-      return allTurns().map((el) => {
-        const role = this.getRole(el);
-        const content = el.querySelector(".ds-markdown") || el.querySelector('[class*="markdown"]') || el;
-        return { role, el: content };
-      });
+      return turns3().map((msg) => ({ role: roleOf2(msg), el: contentOf3(msg) }));
+    },
+    /**
+     * DeepSeek renders a native action bar under each turn:
+     *   - assistant: [copy] [regenerate] [like] [dislike] [share] [more]
+     *   - user:      [copy] [edit]
+     * Our buttons go INTO that bar, right after the native copy button (both
+     * roles), so they sit beside the site's own 复制 on the same row.
+     */
+    getNativeToolbars() {
+      const out = [];
+      for (const msg of turns3()) {
+        const bar = actionBarOf(msg);
+        if (!bar) continue;
+        out.push({
+          toolbar: bar.bar,
+          content: contentOf3(msg),
+          role: roleOf2(msg),
+          insertAfter: bar.copyBtn
+        });
+      }
+      return out;
+    },
+    /**
+     * Build a button that matches DeepSeek's native action-button markup so the
+     * injected buttons blend into the bar. DeepSeek wraps each icon button as:
+     *   <div role="button" class="ds-button ds-button--iconLabelTertiary
+     *        ds-button--icon ds-button--capsule ds-button--xs …" tabindex="0">
+     *     <div class="ds-button__background"></div>
+     *     <div class="ds-button__icon ds-button__icon--last-child">
+     *       <div class="ds-cross-fade"><div class="ds-icon" style="font-size:inherit">
+     *         <svg width="16" height="16" …/>
+     *       </div></div>
+     *     </div>
+     *   </div>
+     * We clone an existing .ds-button from THIS toolbar (preserving all ds-*
+     * classes so hover/focus styling matches) and swap its <svg> for our
+     * heroicons clipboard, sized to DeepSeek's 16px icons.
+     */
+    makeNativeButton(toolbar, title, double) {
+      const template = toolbar.querySelector('[role="button"].ds-button, button.ds-button');
+      if (template) {
+        const clone = template.cloneNode(true);
+        clone.removeAttribute("aria-label");
+        clone.removeAttribute("id");
+        clone.removeAttribute("data-testid");
+        const iconHost = clone.querySelector(".ds-icon") || clone;
+        const svgAttrs = 'xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"';
+        const single = "M15.666 3.888A2.25 2.25 0 0 0 13.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 0 1-.75.75H9a.75.75 0 0 1-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 0 1 1.927-.184";
+        const doc = "M8.25 7.5V6.108c0-1.135.845-2.098 1.976-2.192.373-.03.748-.057 1.123-.08M15.75 18H18a2.25 2.25 0 0 0 2.25-2.25V6.108c0-1.135-.845-2.098-1.976-2.192a48.424 48.424 0 0 0-1.123-.08M15.75 18.75v-1.875a3.375 3.375 0 0 0-3.375-3.375h-1.5a1.125 1.125 0 0 1-1.125-1.125v-1.5A3.375 3.375 0 0 0 6.375 7.5H5.25m11.9-3.664A2.251 2.251 0 0 0 15 2.25h-1.5a2.251 2.251 0 0 0-2.15 1.586m5.8 0c.065.21.1.433.1.664v.75h-6V4.5c0-.231.035-.454.1-.664M6.75 7.5H4.875c-.621 0-1.125.504-1.125 1.125v12c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125V16.5a9 9 0 0 0-9-9Z";
+        iconHost.innerHTML = `<svg ${svgAttrs}><path d="${double ? doc : single}"/></svg>`;
+        clone.setAttribute("aria-label", title);
+        return clone;
+      }
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "ds-button";
+      btn.setAttribute("aria-label", title);
+      btn.textContent = title;
+      return btn;
     }
   };
 
   // src/platforms/kimi.js
-  function root2() {
+  function root() {
     return queryFirst(['[class*="chat"]', "main", "body"]);
   }
-  function allTurns2() {
-    return queryAll(['[class*="bubble"]', '[class*="message-item"]', '[class*="row"]'], root2());
+  function allTurns() {
+    return queryAll(['[class*="bubble"]', '[class*="message-item"]', '[class*="row"]'], root());
   }
   var kimi_default = {
     host: ["kimi.moonshot.cn"],
     name: "Kimi",
     getMessageElements() {
-      return allTurns2();
+      return allTurns();
     },
     getRole(el) {
       const hint = el.className || "";
@@ -1900,7 +1968,7 @@
       return "assistant";
     },
     getMessages() {
-      return allTurns2().map((el) => {
+      return allTurns().map((el) => {
         const role = this.getRole(el);
         const content = el.querySelector(".markdown") || el.querySelector('[class*="markdown"]') || el;
         return { role, el: content };
@@ -1909,20 +1977,20 @@
   };
 
   // src/platforms/doubao.js
-  function root3() {
+  function root2() {
     return queryFirst(['[class*="chat"]', "main", "body"]);
   }
-  function allTurns3() {
+  function allTurns2() {
     return queryAll(
       ['[class*="message-item"]', '[class*="bubble"]', '[class*="receive"]', '[class*="row"]'],
-      root3()
+      root2()
     );
   }
   var doubao_default = {
     host: ["www.doubao.com", "doubao.com"],
     name: "\u8C46\u5305",
     getMessageElements() {
-      return allTurns3();
+      return allTurns2();
     },
     getRole(el) {
       const hint = el.className || "";
@@ -1930,7 +1998,7 @@
       return "assistant";
     },
     getMessages() {
-      return allTurns3().map((el) => {
+      return allTurns2().map((el) => {
         const role = this.getRole(el);
         const content = el.querySelector('[class*="markdown"]') || el.querySelector('[class*="content"]') || el;
         return { role, el: content };
@@ -2223,6 +2291,33 @@
     }
     return withFreshLine("```" + lang + "\n" + raw + "\n```\n\n");
   }
+  var DEEPSEEK_CODE_BLOCK_CLASS = /(^|\s)md-code-block(\s|$)/;
+  function isDeepSeekCodeBlock(node) {
+    if (!node.getAttribute) return false;
+    return DEEPSEEK_CODE_BLOCK_CLASS.test(node.getAttribute("class") || "");
+  }
+  function deepseekCodeBlockToMd(node) {
+    const pre = node.querySelector("pre");
+    const raw = ((pre || node).textContent || "").replace(/\n$/, "");
+    let lang = "";
+    const banner = node.querySelector(".md-code-block-banner");
+    if (banner) {
+      const label = (banner.querySelector("span")?.textContent || "").trim();
+      if (/^[\w+#.-]{1,24}$/.test(label)) lang = label;
+    }
+    return withFreshLine("```" + lang + "\n" + raw + "\n```\n\n");
+  }
+  function katexAnnotationTex(node) {
+    const cls = node.getAttribute && node.getAttribute("class") || "";
+    if (!/(^|\s)katex(-display)?(\s|$)/.test(cls)) return null;
+    if (/(^|\s)katex-(html|mathml)(\s|$)/.test(cls)) return null;
+    const ann = node.querySelector('annotation[encoding="application/x-tex"]');
+    const tex = ann && ann.textContent.trim();
+    if (!tex) return null;
+    const parentCls = node.parentElement && node.parentElement.getAttribute("class") || "";
+    const display = /(^|\s)katex-display(\s|$)/.test(cls) || /(^|\s)katex-display(\s|$)/.test(parentCls);
+    return { tex, display };
+  }
   function nodeToMd(node, ctx) {
     if (!node) return "";
     const nt = node.nodeType;
@@ -2240,6 +2335,13 @@
 `) : `$${mathTex}$`;
     }
     if (isCodeBlockWidget(node)) return codeBlockWidgetToMd(node);
+    if (isDeepSeekCodeBlock(node)) return deepseekCodeBlockToMd(node);
+    const katex = katexAnnotationTex(node);
+    if (katex) {
+      return katex.display ? withFreshLine(`$$${katex.tex}$$
+
+`) : `$${katex.tex}$`;
+    }
     if (tag2 in INLINE) {
       const inner2 = childrenToMd(node, ctx);
       const wrap = INLINE[tag2];
@@ -24270,17 +24372,17 @@ ${text2}</tr>
   };
   var BADGE_LABEL = { user: t("badgeUser"), assistant: t("badgeAssistant") };
   function htmlToPlainText(html2) {
-    let root4;
+    let root3;
     if (typeof DOMParser !== "undefined") {
-      root4 = new DOMParser().parseFromString(html2, "text/html").body;
+      root3 = new DOMParser().parseFromString(html2, "text/html").body;
     } else {
-      root4 = document.createElement("div");
-      root4.innerHTML = html2;
+      root3 = document.createElement("div");
+      root3.innerHTML = html2;
     }
-    root4.querySelectorAll("p,div,li,tr,h1,h2,h3,h4,h5,h6").forEach((el) => {
+    root3.querySelectorAll("p,div,li,tr,h1,h2,h3,h4,h5,h6").forEach((el) => {
       el.append("\n");
     });
-    return (root4.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
+    return (root3.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
   }
   function roleBadge(role) {
     const style = BADGE_STYLES[role] || BADGE_STYLES.assistant;
@@ -24533,7 +24635,7 @@ ${DIVIDER}
       if (!prev || !prev.hasAttribute(ORIG_ATTR)) clone.remove();
     }
   }
-  function textNodesIn(root4) {
+  function textNodesIn(root3) {
     const out = [];
     const walk = (node) => {
       for (const child of node.childNodes) {
@@ -24541,7 +24643,7 @@ ${DIVIDER}
         else if (child.nodeType === 1) walk(child);
       }
     };
-    walk(root4);
+    walk(root3);
     return out;
   }
   function cssQuote(s) {

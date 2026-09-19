@@ -277,6 +277,80 @@ function codeBlockWidgetToMd(node) {
   return withFreshLine('```' + lang + '\n' + raw + '\n```\n\n');
 }
 
+// --- DeepSeek code block ----------------------------------------------------
+// DeepSeek renders each code block as an ordinary <div class="md-code-block
+// md-code-block-light"> (NOT <pre>, NOT a custom element):
+//   <div class="md-code-block md-code-block-light">
+//     <div class="md-code-block-banner-wrap">
+//       <div class="md-code-block-banner md-code-block-banner-lite">
+//         <div>
+//           <span>javascript</span>            ← language label (FIRST span)
+//           <button …copy-btn…><svg/><span>复制</span></button>
+//           <button …><svg/><span>下载</span></button>
+//         </div>
+//       </div>
+//     </div>
+//     <pre>                                    ← NO <code> child!
+//       <span><span class="token comment">…</span></span>…  ← Prism tokens
+//     </pre>
+//     <svg/> <svg/>                            ← collapse chevrons (dropped)
+//   </div>
+// Left to the generic 'div' flattening, the banner text ("javascript复制下载")
+// leaks as a paragraph in front of an unlabeled fence. Intercept upstream and
+// emit one clean fence; the Prism token spans flatten to plain code text.
+const DEEPSEEK_CODE_BLOCK_CLASS = /(^|\s)md-code-block(\s|$)/;
+
+function isDeepSeekCodeBlock(node) {
+  if (!node.getAttribute) return false;
+  return DEEPSEEK_CODE_BLOCK_CLASS.test(node.getAttribute('class') || '');
+}
+
+function deepseekCodeBlockToMd(node) {
+  const pre = node.querySelector('pre');
+  const raw = ((pre || node).textContent || '').replace(/\n$/, '');
+  // Language = the banner's first <span> ("javascript" / "python" / …). The
+  // 复制/下载 labels are ALSO spans (inside buttons) but never the first one,
+  // and they can't match the token guard anyway. Accept only a bare
+  // language-ish token so an unexpected banner degrades to a bare fence
+  // instead of poisoning it (same guard as ChatGPT's widget label recovery).
+  let lang = '';
+  const banner = node.querySelector('.md-code-block-banner');
+  if (banner) {
+    const label = (banner.querySelector('span')?.textContent || '').trim();
+    if (/^[\w+#.-]{1,24}$/.test(label)) lang = label;
+  }
+  return withFreshLine('```' + lang + '\n' + raw + '\n```\n\n');
+}
+
+// --- KaTeX annotation math ---------------------------------------------------
+// DeepSeek renders math with KaTeX but — unlike Gemini — gives us no
+// site-specific wrapper to read: inline math is a BARE
+// <span class="katex"><span class="katex-mathml">…<annotation
+// encoding="application/x-tex">E = mc^2</annotation>…</span><span
+// class="katex-html">…glyphs…</span></span>, and display math wraps that in
+// <span class="katex-display ds-markdown-math">. Flattening the .katex-html
+// render mashes the glyphs into garbage ("E=mc2E = mc^2E=mc2"), so we recover
+// the raw LaTeX from the annotation and emit $…$ / $$…$$.
+//
+// The .katex-mathml / .katex-html sub-spans share the katex- class prefix —
+// exclude them so only the KaTeX ROOT is intercepted. Display vs inline:
+// a katex-display class on the node itself, or a katex-display parent
+// (KaTeX's standard display output wraps the root that way).
+function katexAnnotationTex(node) {
+  const cls = (node.getAttribute && node.getAttribute('class')) || '';
+  if (!/(^|\s)katex(-display)?(\s|$)/.test(cls)) return null;
+  if (/(^|\s)katex-(html|mathml)(\s|$)/.test(cls)) return null;
+  const ann = node.querySelector('annotation[encoding="application/x-tex"]');
+  const tex = ann && ann.textContent.trim();
+  if (!tex) return null;
+  const parentCls =
+    (node.parentElement && node.parentElement.getAttribute('class')) || '';
+  const display =
+    /(^|\s)katex-display(\s|$)/.test(cls) ||
+    /(^|\s)katex-display(\s|$)/.test(parentCls);
+  return { tex, display };
+}
+
 // --- core recursive converter ---------------------------------------------
 function nodeToMd(node, ctx) {
   if (!node) return '';
@@ -320,6 +394,24 @@ function nodeToMd(node, ctx) {
   // see isCodeBlockWidget() above. Emits one clean fence with the header
   // label as fence info; the CodeMirror spans flatten to plain code text.
   if (isCodeBlockWidget(node)) return codeBlockWidgetToMd(node);
+
+  // DeepSeek code block: a <div class="md-code-block"> holding a banner
+  // (language label + 复制/下载 buttons) above a bare <pre> that has NO
+  // <code> child. Ordinary div, so a switch case would never fire and the
+  // banner text would leak in front of an unlabeled fence ("javascript复制
+  // 下载" + ```). Intercept upstream: fence from the banner's language label.
+  if (isDeepSeekCodeBlock(node)) return deepseekCodeBlockToMd(node);
+
+  // KaTeX-rendered math with no site-specific wrapper (DeepSeek inline math
+  // is a bare <span class="katex">): recover the LaTeX from KaTeX's hidden
+  // MathML twin, which always carries it in
+  // <annotation encoding="application/x-tex">. See katexAnnotationTex().
+  const katex = katexAnnotationTex(node);
+  if (katex) {
+    return katex.display
+      ? withFreshLine(`$$${katex.tex}$$\n\n`)
+      : `$${katex.tex}$`;
+  }
 
   // Inline elements
   if (tag in INLINE) {

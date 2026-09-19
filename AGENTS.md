@@ -44,7 +44,7 @@ across platforms. Do not "optimise" by short-circuiting this pipeline.
 | `src/ui.js` | FAB (with a hover-revealed tool cluster: gear = code font, swatch = site logo), per-message buttons, native-toolbar injection, toast. All in a Shadow DOM. |
 | `src/logo.js` | Optional brand disguise (`ai-copy-logo` setting): replaces Gemini's sparkle `<img>` / ChatGPT's blossom + wordmark with the Kimi or DeepSeek mark (embedded simple-icons paths, self-contained), and renames the composer placeholder + disclaimer pill on BOTH hosts to the brand name. Unset = zero DOM writes. Runs at boot + a debounced MutationObserver + a settle-based `setInterval` safety net (SPA re-renders; swaps EVERY logo instance, not just the first). |
 | `src/platforms/base.js` | Adapter contract + `queryFirst` / `queryAll` fallback helpers. |
-| `src/platforms/*.js` | One adapter per platform. ChatGPT & Gemini are calibrated; the rest are heuristic fallbacks. |
+| `src/platforms/*.js` | One adapter per platform. ChatGPT, Gemini & DeepSeek are calibrated; the rest are heuristic fallbacks. |
 | `test/` | Node `node:test` suite. Converter/renderer/pipeline run via linkedom; adapters run against `test/fixtures/*.html`. |
 
 ## Adapter contract (`src/platforms/base.js`)
@@ -249,6 +249,58 @@ When Gemini ships a UI refresh and selectors break: see
 [`docs/selector-notes.md`](./docs/selector-notes.md) for the recalibration
 workflow (DevTools → update adapter → save fixture → update test → `npm test`).
 
+## DeepSeek-specific notes (calibrated 2026-09)
+
+Calibrated against a saved live page; fixture
+`test/fixtures/deepseek-sample.html` (extracted from a "对话格式测试内容"
+conversation; code bodies truncated, decorative svg paths shortened,
+`.katex-html` stubbed, our capture-time overlay-button artifacts stripped).
+
+- Turns are `div.ds-message` nodes inside a `ds-virtual-list` (messages
+  mount/unmount on scroll — the ui.js MutationObserver rescan handles fresh
+  bars; keyed mounts mean a bound bar never switches content). User/assistant
+  WRAPPER classes are obfuscated per build, so roles are detected via content
+  markers: assistant content root is
+  `.ds-markdown.ds-assistant-message-main-content`, user content is plain text
+  in `.ds-collapsible-text`.
+- Native action bars: a `.ds-flex` holding `[role=button].ds-button` icon
+  buttons — assistant: [copy][regenerate][like][dislike][share][more]; user:
+  [copy][edit]. The bar is a SIBLING of `.ds-message`; the FIRST `.ds-button`
+  in every bar is DeepSeek's own copy button (16px svg path starting
+  `M6.14929 4.02032…` — used as the `insertAfter` anchor for both roles, with
+  first-button fallback if the icon changes). `makeNativeButton` clones a
+  `.ds-button` from that bar and swaps the `<svg>` inside `.ds-icon` for our
+  16px heroicons clipboard. Note: the code-block banners INSIDE the message
+  also carry ds-buttons (复制/下载) — `actionBarOf()` filters out anything
+  contained by `.ds-message`.
+- Code blocks: `div.md-code-block` (ordinary div — intercept, not a switch
+  case) = `.md-code-block-banner` (FIRST span = language label; 复制/下载
+  buttons follow) above a bare `<pre>` with **no `<code>` child** and Prism
+  `token …` spans. Converter: `isDeepSeekCodeBlock()` /
+  `deepseekCodeBlockToMd()` — without it the banner text leaks in front of an
+  unlabeled fence ("javascript复制下载" + ```).
+- Math: KaTeX with **no `data-math` attribute and (for inline math) no
+  site class at all** — inline is a bare `<span class="katex">`, display is
+  `<span class="katex-display ds-markdown-math">`. The raw LaTeX lives in
+  KaTeX's hidden MathML twin:
+  `<annotation encoding="application/x-tex">`. Converter:
+  `katexAnnotationTex()` intercepts the KaTeX ROOT span (class `katex` /
+  `katex-display`, explicitly excluding `katex-html`/`katex-mathml`), reads
+  the annotation, and emits `$…$`/`$$…$$`. This also backstops Gemini's
+  fallback path (nested `.katex` inside a wrapper whose `data-math` went
+  missing). Flattening the `.katex-html` subtree instead mashes glyphs into
+  garbage ("E=mc2E = mc^2E=mc2") — don't.
+- Tables: DeepSeek's served HTML omits `</th>`/`</td>` closing tags. Real
+  browsers auto-close them so the LIVE DOM is a well-formed table — but
+  linkedom does NOT, so the fixture rewrites the test table to the
+  browser-parsed form before parsing (see the comment in the fixture).
+- Task lists: `li.ds-markdown-task-list-item` carries the checkbox as a
+  literal glyph span (`span.ds-markdown-task-checkbox` → "□ " / "☑ "). The
+  glyph is kept as text (checked/unchecked state survives into OneNote); no
+  converter special-casing.
+- Untouched/unsupported: `ds-markdown-cite` markers (none observed in the
+  calibration page), R1 thinking blocks (no fixture), search-result cards.
+
 ## ChatGPT-specific note
 
 ChatGPT's adapter has **no** `tooltipStyle` / `makeNativeButton` — it uses the
@@ -394,6 +446,6 @@ recalibrating a platform, save a fixture and add an adapter test.
 ## Commit / PR conventions
 
 - Build before committing if `src/` changed: `npm run build`, then commit both.
-- Run `npm test` before pushing — 157 tests should all pass.
+- Run `npm test` before pushing — 174 tests should all pass.
 - Keep the userscript header version in `build.mjs` in sync with
   `package.json` if you bump versions.
